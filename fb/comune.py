@@ -1,0 +1,118 @@
+"""Pezzi comuni: browser, lettura dei dati GraphQL, stato della sessione.
+
+Regola per tutto il motore: il repository e' pubblico e i registri di GitHub li
+vede chiunque. Nei registri si scrivono solo numeri, mai testi, nomi o link.
+"""
+import json, re, time, datetime
+from pathlib import Path
+
+PROFILO = Path.home() / "profilo-fb"
+UA_ARGS = ["--disable-blink-features=AutomationControlled", "--no-sandbox"]
+
+
+def log(*a):
+    print(datetime.datetime.utcnow().strftime("%H:%M:%S"), *a, flush=True)
+
+
+def apri(pw):
+    ctx = pw.chromium.launch_persistent_context(
+        str(PROFILO), headless=False, viewport={"width": 1260, "height": 860},
+        args=UA_ARGS, locale="da-DK", timezone_id="Europe/Copenhagen")
+    page = ctx.pages[0] if ctx.pages else ctx.new_page()
+    return ctx, page
+
+
+def stato(ctx, page):
+    if "checkpoint" in page.url or "/login" in page.url or "two_step" in page.url:
+        return "verifica"
+    nomi = {c["name"] for c in ctx.cookies("https://www.facebook.com")}
+    return "collegato" if "c_user" in nomi else "scollegato"
+
+
+def oggetti(body):
+    if body.lstrip().startswith("<"):
+        for m in re.finditer(r'<script type="application/json"[^>]*>(.*?)</script>', body, re.S):
+            try:
+                yield json.loads(m.group(1))
+            except Exception:
+                pass
+        return
+    for riga in body.splitlines():
+        if riga.strip().startswith("{"):
+            try:
+                yield json.loads(riga)
+            except Exception:
+                pass
+
+
+def cammina(o, f):
+    if isinstance(o, dict):
+        f(o)
+        for v in o.values():
+            cammina(v, f)
+    elif isinstance(o, list):
+        for v in o:
+            cammina(v, f)
+
+
+def post_da(risposte):
+    """Tutti i post (Story) trovati nelle risposte, con testo, data e foto."""
+    tutti = {}
+    for body in risposte:
+        for obj in oggetti(body):
+            def visita(d):
+                if d.get("__typename") != "Story" or not d.get("post_id"):
+                    return
+                p = tutti.setdefault(d["post_id"], {"id": d["post_id"], "testo": "", "tempo": None,
+                                                    "foto": {}, "foto_totali": 0, "url": None})
+                def dentro(x):
+                    if isinstance(x.get("creation_time"), int) and not p["tempo"]:
+                        p["tempo"] = x["creation_time"]
+                    m = x.get("message")
+                    if isinstance(m, dict) and isinstance(m.get("text"), str) and len(m["text"]) > len(p["testo"]):
+                        p["testo"] = m["text"]
+                    if x.get("__typename") == "Photo" and x.get("id"):
+                        img = x.get("image") or x.get("viewer_image") or {}
+                        if isinstance(img, dict) and img.get("uri"):
+                            p["foto"][x["id"]] = img["uri"]
+                        else:
+                            p["foto"].setdefault(x["id"], None)
+                    s = x.get("all_subattachments")
+                    if isinstance(s, dict) and isinstance(s.get("count"), int):
+                        p["foto_totali"] = max(p["foto_totali"], s["count"])
+                    if isinstance(x.get("url"), str) and "/groups/" in x["url"] and not p["url"]:
+                        p["url"] = x["url"]
+                cammina(d, lambda x: isinstance(x, dict) and dentro(x))
+            cammina(obj, visita)
+    return tutti
+
+
+def registra(page, azione):
+    """Esegue azione() raccogliendo le risposte GraphQL e la pagina iniziale."""
+    risposte = []
+    def on_resp(r):
+        if "/api/graphql" in r.url or r.request.resource_type == "document":
+            try:
+                risposte.append(r.text())
+            except Exception:
+                pass
+    page.on("response", on_resp)
+    try:
+        azione()
+    finally:
+        page.remove_listener("response", on_resp)
+    return risposte
+
+
+def leggi_gruppo(page, gid, scroll=12):
+    def azione():
+        page.goto(f"https://www.facebook.com/groups/{gid}/?sorting_setting=CHRONOLOGICAL",
+                  wait_until="domcontentloaded", timeout=60000)
+        time.sleep(6)
+        page.keyboard.press("Escape")
+        for _ in range(scroll):
+            page.mouse.move(600, 500)
+            page.mouse.wheel(0, 2500)
+            time.sleep(2.2)
+        time.sleep(2)
+    return post_da(registra(page, azione))
