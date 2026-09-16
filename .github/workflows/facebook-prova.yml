@@ -1,6 +1,7 @@
 name: facebook-prova
 
 # Prova di tenuta: legge tutti i gruppi a giro e scrive solo numeri.
+# La sessione arriva cifrata dalla release "sessione" e ci torna aggiornata.
 on:
   workflow_dispatch:
     inputs:
@@ -9,8 +10,7 @@ on:
         default: "40"
 
 permissions:
-  contents: read
-  actions: write
+  contents: write
 
 concurrency:
   group: facebook
@@ -20,6 +20,8 @@ jobs:
   prova:
     runs-on: ubuntu-latest
     timeout-minutes: 120
+    env:
+      GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v4
 
@@ -29,23 +31,17 @@ jobs:
 
       - name: Browser
         run: |
-          pip install playwright==1.55.0
+          pip install playwright==1.62.0
           python -m playwright install --with-deps chromium
-          sudo apt-get update -qq
           sudo apt-get install -y -qq xvfb fonts-noto-color-emoji > /dev/null
 
-      - uses: actions/cache/restore@v4
-        with:
-          path: profilo.enc
-          key: fbprofilo-nessuno
-          restore-keys: fbprofilo-
-
-      - name: Decifra il profilo
+      - name: Scarica e decifra la sessione
         env:
           PROFILO_KEY: ${{ secrets.PROFILO_KEY }}
         run: |
-          test -f profilo.enc || { echo "ALLARME: nessun profilo salvato, serve facebook-accesso"; exit 2; }
-          openssl enc -d -aes-256-cbc -pbkdf2 -pass env:PROFILO_KEY -in profilo.enc | tar -C ~ -xzf -
+          gh release download sessione -R "$GITHUB_REPOSITORY" -p sessione.enc \
+            || { echo "ALLARME: nessuna sessione, serve accesso_pc.py"; exit 2; }
+          openssl enc -d -aes-256-cbc -pbkdf2 -pass env:PROFILO_KEY -in sessione.enc -out ~/sessione.json
 
       - name: Lettura
         working-directory: fb
@@ -54,15 +50,12 @@ jobs:
           sleep 2
           DISPLAY=:99 python prova_lettura.py "${{ inputs.minuti }}"
 
-      - name: Cifra il profilo aggiornato
+      - name: Ricarica la sessione aggiornata
+        if: success()
         env:
           PROFILO_KEY: ${{ secrets.PROFILO_KEY }}
         run: |
-          rm -f profilo.enc
-          tar -C ~ --exclude='*Cache*' --exclude='Crashpad' --exclude='Service Worker' -czf - profilo-fb \
-            | openssl enc -aes-256-cbc -pbkdf2 -salt -pass env:PROFILO_KEY -out profilo.enc
-
-      - uses: actions/cache/save@v4
-        with:
-          path: profilo.enc
-          key: fbprofilo-${{ github.run_id }}-${{ github.run_attempt }}
+          rm -f sessione.enc
+          openssl enc -aes-256-cbc -pbkdf2 -salt -pass env:PROFILO_KEY -in ~/sessione.json -out sessione.enc
+          rm -f ~/sessione.json
+          gh release upload sessione sessione.enc --clobber -R "$GITHUB_REPOSITORY"

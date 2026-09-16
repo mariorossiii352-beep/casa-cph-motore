@@ -6,7 +6,7 @@ vede chiunque. Nei registri si scrivono solo numeri, mai testi, nomi o link.
 import json, re, time, datetime
 from pathlib import Path
 
-PROFILO = Path.home() / "profilo-fb"
+
 UA_ARGS = ["--disable-blink-features=AutomationControlled", "--no-sandbox"]
 
 
@@ -14,12 +14,20 @@ def log(*a):
     print(datetime.datetime.utcnow().strftime("%H:%M:%S"), *a, flush=True)
 
 
+SESSIONE = Path.home() / "sessione.json"
+
+
 def apri(pw):
-    ctx = pw.chromium.launch_persistent_context(
-        str(PROFILO), headless=False, viewport={"width": 1260, "height": 860},
-        args=UA_ARGS, locale="da-DK", timezone_id="Europe/Copenhagen")
-    page = ctx.pages[0] if ctx.pages else ctx.new_page()
+    """Browser con la sessione salvata (cookie), che alla fine va risalvata con salva()."""
+    browser = pw.chromium.launch(headless=False, args=UA_ARGS)
+    ctx = browser.new_context(storage_state=str(SESSIONE), viewport={"width": 1260, "height": 860},
+                              locale="da-DK", timezone_id="Europe/Copenhagen")
+    page = ctx.new_page()
     return ctx, page
+
+
+def salva(ctx):
+    SESSIONE.write_text(json.dumps(ctx.storage_state()), encoding="utf-8")
 
 
 def stato(ctx, page):

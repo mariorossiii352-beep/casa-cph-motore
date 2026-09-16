@@ -2,7 +2,7 @@
 import json, sys, time
 from pathlib import Path
 from playwright.sync_api import sync_playwright
-from comune import apri, stato, log, leggi_gruppo
+from comune import apri, salva, stato, log, leggi_gruppo
 
 MINUTI = int(sys.argv[1]) if len(sys.argv) > 1 else 40
 GRUPPI = json.loads((Path(__file__).parent / "gruppi.json").read_text())
@@ -42,5 +42,7 @@ with sync_playwright() as pw:
             log(f"giro {giro} gruppo #{i}: post={len(posts)} ultime24h={r24} senza_testo={st}")
             visti += len(posts); recenti += r24; senza_testo += st; n += 1
         log(f"FINE GIRO {giro}: gruppi={n}/{len(GRUPPI)} post={visti} ultime24h={recenti} senza_testo={senza_testo}")
+    if esito == 0:
+        salva(ctx)
     ctx.close()
     sys.exit(esito)
