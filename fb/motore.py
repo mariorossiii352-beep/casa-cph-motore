@@ -25,7 +25,9 @@ def manda(percorso, dati):
     for tentativo in range(3):
         try:
             req = urllib.request.Request(APP + percorso, data=corpo, method="POST",
-                                         headers={"Authorization": "Bearer " + token_github(), "content-type": "application/json"})
+                                         # Cloudflare respinge (errore 1010) il nome predefinito "Python-urllib".
+                                         headers={"Authorization": "Bearer " + token_github(), "content-type": "application/json",
+                                                  "User-Agent": "casa-cph-motore/1.0"})
             with urllib.request.urlopen(req, timeout=120) as r:
                 return json.load(r)
         except Exception as e:
