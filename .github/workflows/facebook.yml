@@ -76,6 +76,21 @@ jobs:
           path: ~/memoria-fb
           key: memoria-fb-${{ github.run_id }}-${{ github.run_attempt }}
 
+      # GitHub spegne gli orari automatici dei progetti senza modifiche da 60 giorni:
+      # ogni 45 giorni il motore lascia una piccola modifica, cosi' non si ferma mai.
+      - name: Tiene acceso l'orario automatico
+        if: always()
+        run: |
+          ULTIMO=$(git log -1 --format=%ct)
+          if [ $(( $(date +%s) - ULTIMO )) -gt $((45*86400)) ]; then
+            date -u +%F > .ultimo-controllo
+            git config user.name "casa-cph-motore"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add .ultimo-controllo
+            git commit -m "Controllo periodico: l'orario automatico resta acceso"
+            git push || true
+          fi
+
       - name: Riparte
         if: success()
         run: gh workflow run facebook.yml -R "$GITHUB_REPOSITORY" --ref main
