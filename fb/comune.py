@@ -28,6 +28,8 @@ def apri(pw):
 
 def salva(ctx):
     SESSIONE.write_text(json.dumps(ctx.storage_state()), encoding="utf-8")
+    # Segnale per GitHub: in questo giro la sessione era collegata, si puo' ricaricare.
+    SESSIONE.with_suffix(".ok").write_text("1")
 
 
 def stato(ctx, page):

@@ -59,10 +59,12 @@ jobs:
           DISPLAY=:99 python motore.py 320
 
       - name: Ricarica la sessione aggiornata
-        if: success()
+        if: always()
         env:
           PROFILO_KEY: ${{ secrets.PROFILO_KEY }}
         run: |
+          # Solo se in questo giro il motore ha visto la sessione collegata e l'ha salvata.
+          [ -f ~/sessione.ok ] || exit 0
           rm -f sessione.enc
           openssl enc -aes-256-cbc -pbkdf2 -salt -pass env:PROFILO_KEY -in ~/sessione.json -out sessione.enc
           rm -f ~/sessione.json
