@@ -105,6 +105,9 @@ with sync_playwright() as pw:
             for p in posts.values():
                 if not p["testo"] and not p["foto"]:
                     continue
+                # Post piu' vecchi di 10 giorni: la casa e' quasi sempre gia' andata.
+                if p["tempo"] and time.time() - p["tempo"] > 10 * 86400:
+                    continue
                 pp = {"id": p["id"], "url": p["url"], "testo": p["testo"], "tempo": p["tempo"],
                       "foto": [u for u in p["foto"].values() if u], "foto_totali": p["foto_totali"]}
                 f = firma(pp)
@@ -117,8 +120,10 @@ with sync_playwright() as pw:
                 if r is None:
                     errori += 1
                     continue
+                falliti = set(r.get("falliti") or [])
                 for pp, f in blocco:
-                    visti[pp["id"]] = f
+                    if pp["id"] not in falliti:
+                        visti[pp["id"]] = f
                 nuovi += len(blocco)
                 salvati = r.get("salvato", 0)
                 offerte += salvati
