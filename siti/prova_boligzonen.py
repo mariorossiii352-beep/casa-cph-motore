@@ -1,40 +1,44 @@
-"""Prova: Boligzonen si lascia leggere da GitHub? Semplice richiesta e browser vero."""
-import json, time, urllib.request
+"""Prova: Boligzonen da GitHub con un browser vero (visibile su schermo virtuale),
+lasciando il tempo di superare il controllo di Cloudflare. Scrive solo numeri e titoli."""
+import time
 from playwright.sync_api import sync_playwright
 
-URL_LISTA = "https://boligzonen.dk/lejebolig?property_search%5Bsort%5D=updated_at&sort=updated_at"
-UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36"
+LISTA = "https://boligzonen.dk/lejebolig?property_search%5Bsort%5D=updated_at&sort=updated_at"
 
-def semplice():
-    req = urllib.request.Request(URL_LISTA, headers={"User-Agent": UA, "Accept": "text/html", "Accept-Language": "da-DK,da;q=0.9"})
-    try:
-        with urllib.request.urlopen(req, timeout=30) as r:
-            t = r.read().decode("utf-8", "ignore")
-            return r.status, len(t), "Just a moment" in t
-    except urllib.error.HTTPError as e:
-        return e.code, 0, None
 
-print("richiesta semplice:", semplice())
+def aspetta_controllo(page, secondi=60):
+    fine = time.time() + secondi
+    while time.time() < fine:
+        titolo = page.title()
+        html = page.content()
+        if "Just a moment" not in titolo and "Attention Required" not in titolo and "challenge" not in html[:3000].lower():
+            return titolo, html
+        time.sleep(2)
+    return page.title(), page.content()
+
 
 with sync_playwright() as pw:
-    b = pw.chromium.launch(headless=True)
-    p = b.new_page(user_agent=UA, locale="da-DK")
-    r = p.goto(URL_LISTA, wait_until="domcontentloaded", timeout=60000)
-    time.sleep(8)
-    html = p.content()
-    print("browser lista:", r.status if r else None, len(html), "sfida" if "Just a moment" in html else "ok",
-          "annunci json-ld" if "CollectionPage" in html else "niente json-ld")
-    link = None
-    for a in p.locator('a[href*="/lejeboliger/"]').all()[:3]:
-        link = a.get_attribute("href")
-        if link:
-            break
-    if link:
-        r2 = p.goto("https://boligzonen.dk" + link if link.startswith("/") else link, wait_until="domcontentloaded", timeout=60000)
-        time.sleep(4)
-        h2 = p.content()
-        print("browser scheda:", r2.status if r2 else None, len(h2), "RealEstateListing" in h2)
-        # Dopo aver superato la pagina, le richieste dallo stesso browser passano?
-        r3 = p.request.get(URL_LISTA + "&page=2")
-        print("richiesta dal browser (pagina 2):", r3.status, len(r3.text()))
-    b.close()
+    ctx = pw.chromium.launch_persistent_context(
+        "/tmp/profilo-bz", headless=False, viewport={"width": 1280, "height": 860},
+        args=["--disable-blink-features=AutomationControlled", "--no-sandbox"], locale="da-DK", timezone_id="Europe/Copenhagen")
+    page = ctx.pages[0] if ctx.pages else ctx.new_page()
+    r = page.goto(LISTA, wait_until="domcontentloaded", timeout=60000)
+    print("prima risposta:", r.status if r else None, "titolo:", page.title())
+    t0 = time.time()
+    titolo, html = aspetta_controllo(page)
+    print(f"dopo {round(time.time() - t0)} s -> titolo: {titolo[:60]} | CollectionPage: {'CollectionPage' in html} | lunghezza {len(html)}")
+    if "CollectionPage" in html:
+        link = page.locator('a[href*="/lejeboliger/"]').first.get_attribute("href")
+        r2 = page.goto(("https://boligzonen.dk" + link) if link.startswith("/") else link, wait_until="domcontentloaded", timeout=60000)
+        t2, h2 = aspetta_controllo(page, 30)
+        print("scheda:", r2.status if r2 else None, "| RealEstateListing:", "RealEstateListing" in h2, "| descrizione intera:", "show-more-content" in h2)
+        r3 = page.request.get(LISTA + "&page=2")
+        print("pagina 2 con richiesta diretta dal browser:", r3.status, "CollectionPage" in r3.text())
+        for i in range(3, 8):
+            page.goto(LISTA + f"&page={i}", wait_until="domcontentloaded", timeout=60000)
+            ti, hi = aspetta_controllo(page, 30)
+            print(f"pagina {i}: CollectionPage {'CollectionPage' in hi}")
+            time.sleep(2)
+    else:
+        print("inizio pagina:", html[:300].replace("\n", " "))
+    ctx.close()
