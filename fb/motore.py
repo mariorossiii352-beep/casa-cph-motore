@@ -2,7 +2,7 @@
 
 Regole del registro pubblico: solo numeri. Nessun testo, nome o link.
 """
-import json, os, sys, time, hashlib, urllib.request
+import json, os, re, sys, time, hashlib, urllib.request
 from pathlib import Path
 from playwright.sync_api import sync_playwright
 from comune import apri, salva, stato, log, leggi_gruppo, registra, post_da
@@ -66,6 +66,54 @@ def tutte_le_foto(page, post_id):
         for o in oggetti(b):
             cammina(o, lambda x: isinstance(x, dict) and visita(x))
     return [u for _, u in foto.values()]
+
+
+INDISPONIBILE = re.compile(r"(content isn.t available|isn.t available right now|indhold er ikke tilg.ngeligt|Dette indhold er ikke)", re.I)
+
+
+def controlla_post(page, url, pid):
+    """Il post di una casa nell'app esiste ancora? Se si', testo e foto aggiornati."""
+    def azione():
+        page.goto(url, wait_until="domcontentloaded", timeout=60000)
+        time.sleep(6)
+    posts = post_da(registra(page, azione))
+    p = posts.get(str(pid))
+    if p and p["testo"]:
+        return {"id": pid, "esito": "esiste", "post": {"testo": p["testo"], "tempo": p["tempo"], "url": url,
+                "foto": [u for u in p["foto"].values() if u], "foto_totali": p["foto_totali"]}}
+    if INDISPONIBILE.search(page.content()):
+        return {"id": pid, "esito": "sparito"}
+    return {"id": pid, "esito": "incerto"}
+
+
+def controlli(ctx, page, fine):
+    """Dopo ogni giro: ricontrolla i post delle case che sono nell'app."""
+    r = manda("/motore/controlli", {"esiti": []}) or {}
+    esiti = []
+    for x in r.get("da_controllare") or []:
+        if time.time() > fine:
+            break
+        try:
+            e = controlla_post(page, x["url"], x["id"])
+        except Exception:
+            continue
+        if e["esito"] == "esiste" and e["post"]["foto_totali"] > len(e["post"]["foto"]):
+            try:
+                f = tutte_le_foto(page, x["id"])
+                if len(f) > len(e["post"]["foto"]):
+                    e["post"]["foto"] = f
+            except Exception:
+                pass
+        esiti.append(e)
+    spariti = sum(1 for e in esiti if e["esito"] == "sparito")
+    # Se Facebook si e' scollegato o sembrano spariti quasi tutti, non si toglie niente.
+    if stato(ctx, page) != "collegato" or (esiti and spariti > max(2, len(esiti) // 2)):
+        log(f"controlli: {len(esiti)} post, {spariti} spariti, NON inviati")
+        return
+    certi = [e for e in esiti if e["esito"] != "incerto"]
+    if certi:
+        manda("/motore/controlli", {"esiti": certi})
+    log(f"controlli: {len(esiti)} post, {spariti} spariti, {len(esiti) - len(certi)} incerti")
 
 
 MEMORIA.parent.mkdir(parents=True, exist_ok=True)
@@ -148,6 +196,11 @@ with sync_playwright() as pw:
         if len(visti) > 20000:
             visti = dict(list(visti.items())[-12000:])
         MEMORIA.write_text(json.dumps(visti))
+        if esito == 0:
+            try:
+                controlli(ctx, page, fine)
+            except Exception as e:
+                log(f"controlli: errore {type(e).__name__}")
         # Salva subito i cookie aggiornati da Facebook: se il giro dopo va male, restano validi.
         if esito == 0:
             salva(ctx)
