@@ -1,0 +1,79 @@
+name: facebook
+
+# Il motore vero: legge i gruppi di continuo per circa 5 ore e mezza, poi
+# riparte da solo. L'orario ogni 30 minuti e' solo una rete di sicurezza: se
+# un giro e' gia' in corso, quello nuovo aspetta (concurrency).
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "*/30 * * * *"
+
+permissions:
+  contents: write
+  actions: write
+  id-token: write
+
+concurrency:
+  group: facebook
+  cancel-in-progress: false
+
+jobs:
+  motore:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Browser
+        run: |
+          pip install playwright==1.62.0
+          python -m playwright install --with-deps chromium
+          sudo apt-get install -y -qq xvfb fonts-noto-color-emoji > /dev/null
+
+      - uses: actions/cache/restore@v4
+        with:
+          path: ~/memoria-fb
+          key: memoria-fb-nessuna
+          restore-keys: memoria-fb-
+
+      - name: Scarica e decifra la sessione
+        env:
+          PROFILO_KEY: ${{ secrets.PROFILO_KEY }}
+        run: |
+          gh release download sessione -R "$GITHUB_REPOSITORY" -p sessione.enc \
+            || { echo "ALLARME: nessuna sessione, serve accesso_pc.py"; exit 2; }
+          openssl enc -d -aes-256-cbc -pbkdf2 -pass env:PROFILO_KEY -in sessione.enc -out ~/sessione.json
+
+      - name: Lettura dei gruppi
+        id: lettura
+        working-directory: fb
+        run: |
+          Xvfb :99 -screen 0 1280x900x24 -nolisten tcp &
+          sleep 2
+          DISPLAY=:99 python motore.py 320
+
+      - name: Ricarica la sessione aggiornata
+        if: success()
+        env:
+          PROFILO_KEY: ${{ secrets.PROFILO_KEY }}
+        run: |
+          rm -f sessione.enc
+          openssl enc -aes-256-cbc -pbkdf2 -salt -pass env:PROFILO_KEY -in ~/sessione.json -out sessione.enc
+          rm -f ~/sessione.json
+          gh release upload sessione sessione.enc --clobber -R "$GITHUB_REPOSITORY"
+
+      - uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: ~/memoria-fb
+          key: memoria-fb-${{ github.run_id }}-${{ github.run_attempt }}
+
+      - name: Riparte
+        if: success()
+        run: gh workflow run facebook.yml -R "$GITHUB_REPOSITORY" --ref main
