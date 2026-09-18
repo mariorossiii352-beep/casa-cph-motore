@@ -1,0 +1,17 @@
+name: prova-bz
+on: workflow_dispatch
+permissions:
+  contents: read
+jobs:
+  prova:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Boligzonen da GitHub
+        run: |
+          UA="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36"
+          for U in "https://boligzonen.dk/lejebolig?property_search%5Bsort%5D=updated_at&sort=updated_at" "https://boligzonen.dk/lejebolig?property_search%5Bsort%5D=zip_code_code&sort=zip_code_code&page=2"; do
+            C=$(curl -s -L --compressed -A "$UA" -H "Accept-Language: da-DK,da;q=0.9" -o p.html -w "%{http_code}" "$U")
+            echo "$C $(wc -c < p.html) byte | json-ld: $(grep -c 'application/ld+json' p.html) | controllo: $(grep -c -E 'Just a moment|challenge-platform' p.html)"
+            sleep 3
+          done
