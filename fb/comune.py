@@ -84,14 +84,25 @@ def oggetti(body):
                 pass
 
 
-def cammina(o, f):
+def cammina(o, f, salta=None):
+    """Visita tutti i dizionari; salta(chiave) permette di non entrare in certi rami."""
     if isinstance(o, dict):
         f(o)
-        for v in o.values():
-            cammina(v, f)
+        for k, v in o.items():
+            if salta and salta(k):
+                continue
+            cammina(v, f, salta)
     elif isinstance(o, list):
         for v in o:
-            cammina(v, f)
+            cammina(v, f, salta)
+
+
+# Facebook mette accanto al post la sua traduzione automatica nella lingua dell'account
+# (italiano): va ignorata, il testo da leggere e' l'originale. Anche i post condivisi dentro
+# un post (attached_story) hanno un testo loro, che non e' quello dell'annuncio.
+def _ramo_da_saltare(k):
+    k = str(k).lower()
+    return "translat" in k or k in ("attached_story", "attached_story_", "comet_sections_attached")
 
 
 def post_da(risposte):
@@ -104,11 +115,16 @@ def post_da(risposte):
                     return
                 p = tutti.setdefault(d["post_id"], {"id": d["post_id"], "testo": "", "tempo": None,
                                                     "foto": {}, "foto_totali": 0, "url": None})
+                # Il testo del post stesso, se c'e' al primo livello, vale piu' di qualunque altro.
+                proprio = d.get("message") if isinstance(d.get("message"), dict) else None
+                if proprio and isinstance(proprio.get("text"), str) and proprio["text"]:
+                    p["proprio"] = True
+                    p["testo"] = proprio["text"]
                 def dentro(x):
                     if isinstance(x.get("creation_time"), int) and not p["tempo"]:
                         p["tempo"] = x["creation_time"]
                     m = x.get("message")
-                    if isinstance(m, dict) and isinstance(m.get("text"), str) and len(m["text"]) > len(p["testo"]):
+                    if not p.get("proprio") and isinstance(m, dict) and isinstance(m.get("text"), str) and len(m["text"]) > len(p["testo"]):
                         p["testo"] = m["text"]
                     if x.get("__typename") == "Photo" and x.get("id"):
                         img = x.get("image") or x.get("viewer_image") or {}
@@ -121,8 +137,10 @@ def post_da(risposte):
                         p["foto_totali"] = max(p["foto_totali"], s["count"])
                     if isinstance(x.get("url"), str) and "/groups/" in x["url"] and not p["url"]:
                         p["url"] = x["url"]
-                cammina(d, lambda x: isinstance(x, dict) and dentro(x))
+                cammina(d, lambda x: isinstance(x, dict) and dentro(x), _ramo_da_saltare)
             cammina(obj, visita)
+    for p in tutti.values():
+        p.pop("proprio", None)
     return tutti
 
 
