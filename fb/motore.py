@@ -177,6 +177,10 @@ with sync_playwright() as pw:
                     break
             else:
                 vuoti_di_fila = 0
+            # Segnale di vita ogni 5 gruppi: il server sa che il motore lavora e quanto legge,
+            # anche quando un giro dura molto (tanti post arretrati da leggere).
+            if i % 5 == 4:
+                manda("/motore/stato", {"battito": {"giro": giro, "gruppi": i + 1, "post": letti}})
             da_mandare = []
             for p in posts.values():
                 if not p["testo"] and not p["foto"]:
