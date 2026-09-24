@@ -3,7 +3,7 @@
 Regola per tutto il motore: il repository e' pubblico e i registri di GitHub li
 vede chiunque. Nei registri si scrivono solo numeri, mai testi, nomi o link.
 """
-import json, re, time, datetime
+import json, random, re, time, datetime
 from pathlib import Path
 
 
@@ -143,15 +143,18 @@ def registra(page, azione):
     return risposte
 
 
-def leggi_gruppo(page, gid, scroll=12):
+def leggi_gruppo(page, gid, scroll=8):
+    # Ritmo da persona: pause un po' diverse ogni volta e meno scorrimento (ogni 30 minuti
+    # bastano gli ultimi post). Il 23/09/2026 un ritmo piu' fitto ha fatto bloccare la lettura
+    # dei gruppi da Facebook per un giorno e mezzo.
     def azione():
         page.goto(f"https://www.facebook.com/groups/{gid}/?sorting_setting=CHRONOLOGICAL",
                   wait_until="domcontentloaded", timeout=60000)
-        time.sleep(6)
+        time.sleep(random.uniform(5, 8))
         page.keyboard.press("Escape")
         for _ in range(scroll):
-            page.mouse.move(600, 500)
-            page.mouse.wheel(0, 2500)
-            time.sleep(2.2)
-        time.sleep(2)
+            page.mouse.move(random.randint(450, 750), random.randint(380, 620))
+            page.mouse.wheel(0, random.randint(1900, 2700))
+            time.sleep(random.uniform(1.8, 3.4))
+        time.sleep(random.uniform(1.5, 3))
     return post_da(registra(page, azione))
