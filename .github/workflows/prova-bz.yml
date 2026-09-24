@@ -1,0 +1,15 @@
+name: prova-bz
+on: workflow_dispatch
+permissions:
+  contents: read
+jobs:
+  prova:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Visita all'app da GitHub
+        run: |
+          for i in 1 2 3; do
+            curl -s https://casa-cph-nuova.mariorossiii352.workers.dev/prova-bz | python3 -c "import sys,json; d=json.load(sys.stdin); print('diretto', d['diretto'].get('stato'), d['diretto'].get('blocco'), '| europa', d['europa'].get('stato'), d['europa'].get('blocco'))"
+            sleep 20
+          done
