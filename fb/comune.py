@@ -32,6 +32,35 @@ def salva(ctx):
     SESSIONE.with_suffix(".ok").write_text("1")
 
 
+SEGNI = {
+    "login": r'name="email"|name="pass"|Log ind på Facebook|Log in to Facebook|Log into Facebook',
+    "verifica": r"checkpoint|Bekræft din identitet|Confirm your identity|Vi har brug for at bekræfte|security check",
+    "bloccato": r"midlertidigt blokeret|temporarily blocked|You.re Temporarily Blocked|misusing this feature|going too fast",
+    "non_disponibile": r"content isn.t available|indhold er ikke tilg.ngeligt|Dette indhold er ikke",
+    "iscrizione": r"Deltag i gruppe|Join group|Bliv medlem",
+}
+
+
+def diagnosi_pagina(page):
+    """Cosa mostra davvero la pagina (per il canale privato verso l'app, mai per i registri)."""
+    try:
+        html = page.content()
+    except Exception:
+        html = ""
+    try:
+        testo = page.inner_text("body")[:600]
+    except Exception:
+        testo = ""
+    try:
+        articoli = page.locator('[role="article"]').count()
+    except Exception:
+        articoli = -1
+    segni = [k for k, rx in SEGNI.items() if re.search(rx, html, re.I)]
+    return {"url": page.url[:200], "titolo": (page.title() or "")[:120], "segni": segni,
+            "articoli": articoli, "c_user": "c_user" in {c["name"] for c in page.context.cookies("https://www.facebook.com")},
+            "testo": re.sub(r"\s+", " ", testo)[:400]}
+
+
 def stato(ctx, page):
     if "checkpoint" in page.url or "/login" in page.url or "two_step" in page.url:
         return "verifica"

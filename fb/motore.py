@@ -5,7 +5,7 @@ Regole del registro pubblico: solo numeri. Nessun testo, nome o link.
 import json, os, re, sys, time, hashlib, urllib.request
 from pathlib import Path
 from playwright.sync_api import sync_playwright
-from comune import apri, salva, stato, log, leggi_gruppo, registra, post_da
+from comune import apri, salva, stato, log, leggi_gruppo, registra, post_da, diagnosi_pagina
 
 APP = "https://casa-cph-nuova.mariorossiii352.workers.dev"
 MINUTI = int(sys.argv[1]) if len(sys.argv) > 1 else 330
@@ -71,16 +71,25 @@ def tutte_le_foto(page, post_id):
 INDISPONIBILE = re.compile(r"(content isn.t available|isn.t available right now|indhold er ikke tilg.ngeligt|Dette indhold er ikke)", re.I)
 
 
-def controlla_post(page, url, pid):
-    """Il post di una casa nell'app esiste ancora? Se si', testo e foto aggiornati."""
+def controlla_post(page, url, pid, pezzo=""):
+    """Il post di una casa nell'app esiste ancora? Se si', testo e foto aggiornati.
+    Si riconosce dal suo testo nella pagina (l'id interno di Facebook non e' affidabile)."""
     def azione():
         page.goto(url, wait_until="domcontentloaded", timeout=60000)
         time.sleep(6)
     posts = post_da(registra(page, azione))
-    p = posts.get(str(pid))
+    norma = lambda t: re.sub(r"\W+", " ", t or "").strip().lower()
+    chiave = norma(pezzo)[:50]
+    p = posts.get(str(pid)) or next((x for x in posts.values() if chiave and chiave in norma(x["testo"])), None)
     if p and p["testo"]:
         return {"id": pid, "esito": "esiste", "post": {"testo": p["testo"], "tempo": p["tempo"], "url": url,
                 "foto": [u for u in p["foto"].values() if u], "foto_totali": p["foto_totali"]}}
+    try:
+        corpo = page.inner_text("body")
+    except Exception:
+        corpo = ""
+    if chiave and chiave in norma(corpo):
+        return {"id": pid, "esito": "esiste"}
     if INDISPONIBILE.search(page.content()):
         return {"id": pid, "esito": "sparito"}
     return {"id": pid, "esito": "incerto"}
@@ -94,10 +103,10 @@ def controlli(ctx, page, fine):
         if time.time() > fine:
             break
         try:
-            e = controlla_post(page, x["url"], x["id"])
+            e = controlla_post(page, x["url"], x["id"], x.get("pezzo", ""))
         except Exception:
             continue
-        if e["esito"] == "esiste" and e["post"]["foto_totali"] > len(e["post"]["foto"]):
+        if e["esito"] == "esiste" and e.get("post") and e["post"]["foto_totali"] > len(e["post"]["foto"]):
             try:
                 f = tutte_le_foto(page, x["id"])
                 if len(f) > len(e["post"]["foto"]):
@@ -135,6 +144,7 @@ with sync_playwright() as pw:
         giro += 1
         t0 = time.time()
         letti = nuovi = offerte = errori = 0
+        vuoti_di_fila = 0
         for i, gid in enumerate(GRUPPI):
             if time.time() > fine:
                 break
@@ -150,6 +160,23 @@ with sync_playwright() as pw:
                 esito = 3
                 break
             letti += len(posts)
+            # Un gruppo senza nessun post non e' normale: Facebook sta mostrando altro
+            # (accesso, verifica, blocco). Si guarda la pagina e lo si dice all'app.
+            if not posts:
+                vuoti_di_fila += 1
+                if vuoti_di_fila == 1 or vuoti_di_fila == 4:
+                    manda("/motore/stato", {"diagnosi": diagnosi_pagina(page), "gruppi_vuoti": vuoti_di_fila})
+                if vuoti_di_fila >= 4:
+                    d = diagnosi_pagina(page)
+                    motivo = {"login": "Facebook chiede di nuovo l'accesso", "verifica": "Facebook chiede una verifica dell'account",
+                              "bloccato": "Facebook ha bloccato temporaneamente la lettura (troppe visite)",
+                              "iscrizione": "risulti non iscritto ai gruppi"}.get((d["segni"] or [""])[0], "Facebook non mostra i post dei gruppi")
+                    manda("/motore/stato", {"allarme": motivo, "diagnosi": d})
+                    log(f"ALLARME giro {giro}: {vuoti_di_fila} gruppi vuoti di fila")
+                    esito = 3
+                    break
+            else:
+                vuoti_di_fila = 0
             da_mandare = []
             for p in posts.values():
                 if not p["testo"] and not p["foto"]:
