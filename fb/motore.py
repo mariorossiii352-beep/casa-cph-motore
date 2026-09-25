@@ -5,7 +5,7 @@ Regole del registro pubblico: solo numeri. Nessun testo, nome o link.
 import json, os, re, sys, time, hashlib, urllib.request
 from pathlib import Path
 from playwright.sync_api import sync_playwright
-from comune import apri, salva, stato, log, leggi_gruppo, registra, post_da, diagnosi_pagina
+from comune import apri, salva, stato, log, leggi_gruppo, registra, post_da, diagnosi_pagina, accesso_remoto
 
 APP = "https://casa-cph-nuova.mariorossiii352.workers.dev"
 MINUTI = int(sys.argv[1]) if len(sys.argv) > 1 else 330
@@ -13,11 +13,19 @@ GRUPPI = json.loads((Path(__file__).parent / "gruppi.json").read_text())
 MEMORIA = Path.home() / "memoria-fb" / "visti.json"
 
 
+_TOKEN = {"v": None, "t": 0}
+
+
 def token_github():
+    # Il token firmato da GitHub vale qualche minuto: si riusa per 4 (lo schermo per l'accesso
+    # dal telefono manda piu' richieste al secondo).
+    if _TOKEN["v"] and time.time() - _TOKEN["t"] < 240:
+        return _TOKEN["v"]
     url = os.environ["ACTIONS_ID_TOKEN_REQUEST_URL"] + "&audience=casa-cph"
     req = urllib.request.Request(url, headers={"Authorization": "Bearer " + os.environ["ACTIONS_ID_TOKEN_REQUEST_TOKEN"]})
     with urllib.request.urlopen(req, timeout=30) as r:
-        return json.load(r)["value"]
+        _TOKEN.update(v=json.load(r)["value"], t=time.time())
+    return _TOKEN["v"]
 
 
 def manda(percorso, dati):
@@ -138,7 +146,15 @@ with sync_playwright() as pw:
     if stato(ctx, page) != "collegato":
         manda("/motore/stato", {"allarme": "la sessione non e' piu' valida (Facebook ha scollegato l'account o chiede una verifica)"})
         log("ALLARME: sessione non valida")
-        sys.exit(3)
+        # Si rientra dal telefono (dall'app); poi si legge normalmente.
+        cookie = accesso_remoto(pw, manda, fine - 20 * 60)
+        if not cookie:
+            ctx.close()
+            sys.exit(3)
+        ctx.add_cookies(cookie)
+        salva(ctx)
+        page.goto("https://www.facebook.com/", wait_until="domcontentloaded")
+        time.sleep(5)
     giro = 0
     while time.time() < fine and esito == 0:
         giro += 1
@@ -240,6 +256,12 @@ with sync_playwright() as pw:
         if esito == 0 and pausa > 0 and time.time() + pausa < fine:
             log(f"pausa {round(pausa / 60)} min")
             time.sleep(pausa)
+    # Scollegato a meta' giro: si rientra dal telefono e il motore riparte subito da capo.
+    if esito == 3 and stato(ctx, page) != "collegato" and fine - time.time() > 40 * 60:
+        cookie = accesso_remoto(pw, manda, fine - 20 * 60)
+        if cookie:
+            ctx.add_cookies(cookie)
+            esito = 0
     if esito == 0:
         salva(ctx)
     ctx.close()

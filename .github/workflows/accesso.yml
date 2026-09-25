@@ -1,0 +1,44 @@
+name: accesso
+
+# Accesso a Facebook dal telefono, a richiesta: la pagina di accesso compare nell'app,
+# entri tu, e la sessione nuova viene salvata cifrata per il motore.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  accesso:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Strumenti
+        run: |
+          pip install playwright==1.62.0
+          sudo apt-get install -y -qq xvfb fonts-noto-color-emoji > /dev/null
+
+      - name: Accesso dal telefono
+        working-directory: fb
+        run: |
+          Xvfb :99 -screen 0 1280x900x24 -nolisten tcp &
+          sleep 2
+          DISPLAY=:99 python accesso_telefono.py 30
+
+      - name: Salva la sessione nuova
+        env:
+          PROFILO_KEY: ${{ secrets.PROFILO_KEY }}
+        run: |
+          [ -f ~/sessione.ok ] || exit 0
+          openssl enc -aes-256-cbc -pbkdf2 -salt -pass env:PROFILO_KEY -in ~/sessione.json -out sessione.enc
+          rm -f ~/sessione.json
+          gh release upload sessione sessione.enc --clobber -R "$GITHUB_REPOSITORY"
