@@ -3,7 +3,7 @@
 Regola per tutto il motore: il repository e' pubblico e i registri di GitHub li
 vede chiunque. Nei registri si scrivono solo numeri, mai testi, nomi o link.
 """
-import base64, json, random, re, time, datetime
+import json, random, re, time, datetime
 from pathlib import Path
 
 
@@ -30,85 +30,6 @@ def salva(ctx):
     SESSIONE.write_text(json.dumps(ctx.storage_state()), encoding="utf-8")
     # Segnale per GitHub: in questo giro la sessione era collegata, si puo' ricaricare.
     SESSIONE.with_suffix(".ok").write_text("1")
-
-
-# --- Accesso a Facebook dal telefono ---------------------------------------------
-# Quando Facebook scollega la sessione, il motore apre la pagina di accesso nel suo browser e
-# ne manda l'immagine all'app (solo il proprietario la vede, dentro Telegram). Dall'app tocchi
-# e scrivi: tocchi e testo tornano qui e vengono eseguiti su QUELLA pagina, e solo questi
-# gesti (tocco, testo, pochi tasti, scorrimento). Tutto passa dal server dell'app: nessun
-# collegamento aperto verso questo computer. Appena l'accesso e' fatto il motore salva la
-# sessione e riparte. Nei registri pubblici non va nulla di tutto questo.
-LARGHEZZA, ALTEZZA = 412, 780
-TASTI = {"Enter", "Backspace", "Tab", "Escape"}
-
-
-def _esegui(pagina, e):
-    t = e.get("tipo")
-    if t == "tap":
-        pagina.mouse.click(max(0, min(LARGHEZZA, float(e["x"]))), max(0, min(ALTEZZA, float(e["y"]))))
-    elif t == "testo":
-        pagina.keyboard.type(str(e.get("t", ""))[:300], delay=35)
-    elif t == "tasto" and e.get("k") in TASTI:
-        pagina.keyboard.press(e["k"])
-    elif t == "scorri":
-        pagina.mouse.wheel(0, max(-800, min(800, float(e.get("dy", 0)))))
-    elif t == "ricarica":
-        pagina.goto("https://www.facebook.com/login/", wait_until="domcontentloaded", timeout=60000)
-
-
-def _dentro(ctx, pagina):
-    return stato(ctx, pagina) == "collegato" and not re.search(r"checkpoint|two_step|/login", pagina.url)
-
-
-def accesso_remoto(ctx, manda, scadenza, ogni=45 * 60):
-    """Aspetta che tu rientri in Facebook dall'app sul telefono. True se l'accesso e' fatto."""
-    pagina = None
-    try:
-        pagina = ctx.new_page()
-        pagina.set_viewport_size({"width": LARGHEZZA, "height": ALTEZZA})
-        pagina.goto("https://www.facebook.com/login/", wait_until="domcontentloaded", timeout=60000)
-        avviso = lambda: manda("/motore/stato", {"accesso": {"attivo": True, "minuti": round((scadenza - time.time()) / 60)}})
-        avviso()
-        log("accesso dal telefono: in attesa")
-        ultimo_avviso = ultimo_evento = time.time()
-        while time.time() < scadenza:
-            try:
-                img = base64.b64encode(pagina.screenshot(type="jpeg", quality=55)).decode()
-            except Exception:
-                img = None
-            r = manda("/motore/schermo", {"img": img, "w": LARGHEZZA, "h": ALTEZZA}) or {}
-            eventi = r.get("eventi") or []
-            for e in eventi:
-                try:
-                    _esegui(pagina, e)
-                except Exception:
-                    pass
-            if eventi:
-                ultimo_evento = time.time()
-            if _dentro(ctx, pagina):
-                time.sleep(20)  # lascia finire a Facebook i passaggi dopo l'accesso
-                if _dentro(ctx, pagina):
-                    manda("/motore/stato", {"accesso": {"fatto": True}})
-                    log("accesso dal telefono: fatto")
-                    return True
-            # Veloce mentre stai usando lo schermo, lento quando non c'e' nessuno.
-            time.sleep(0.7 if time.time() - ultimo_evento < 120 else 4)
-            if time.time() - ultimo_avviso > ogni:
-                avviso()
-                ultimo_avviso = time.time()
-        manda("/motore/stato", {"accesso": {"scaduto": True}})
-        log("accesso dal telefono: tempo scaduto")
-        return False
-    except Exception as e:
-        log(f"accesso dal telefono: errore {type(e).__name__}")
-        return False
-    finally:
-        if pagina:
-            try:
-                pagina.close()
-            except Exception:
-                pass
 
 
 SEGNI = {
