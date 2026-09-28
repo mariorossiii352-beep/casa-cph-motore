@@ -106,35 +106,42 @@ def controlla_post(page, url, pid, pezzo=""):
 
 
 def controlli(ctx, page, fine):
-    """Dopo ogni giro: ricontrolla i post delle case che sono nell'app."""
+    """Dopo ogni giro: ricontrolla i post delle case che sono nell'app, a blocchi di 30, per al
+    massimo 12 minuti (cosi' anche un arretrato di centinaia di post si smaltisce in poco tempo)."""
+    stop = min(fine, time.time() + 12 * 60)
     r = manda("/motore/controlli", {"esiti": []}) or {}
-    esiti = []
-    for x in r.get("da_controllare") or []:
-        if time.time() > fine:
-            break
-        try:
-            e = controlla_post(page, x["url"], x["id"], x.get("pezzo", ""))
-        except Exception:
-            continue
-        if e["esito"] == "esiste" and e.get("post") and e["post"]["foto_totali"] > len(e["post"]["foto"]):
+    tot = spar = 0
+    while r.get("da_controllare") and time.time() < stop:
+        esiti = []
+        for x in r["da_controllare"]:
+            if time.time() > stop:
+                break
             try:
-                f = tutte_le_foto(page, x["id"])
-                if len(f) > len(e["post"]["foto"]):
-                    e["post"]["foto"] = f
+                e = controlla_post(page, x["url"], x["id"], x.get("pezzo", ""))
             except Exception:
-                pass
-        esiti.append(e)
-    spariti = sum(1 for e in esiti if e["esito"] == "sparito")
-    esistono = sum(1 for e in esiti if e["esito"] == "esiste")
-    # Se Facebook si e' scollegato, o nessun post risulta esistente e molti "spariti" (pagina rotta),
-    # non si toglie niente.
-    if stato(ctx, page) != "collegato" or (spariti >= 3 and not esistono):
-        log(f"controlli: {len(esiti)} post, {spariti} spariti, NON inviati")
-        return
-    # Anche gli incerti si mandano: il server li rimette in coda piu' tardi (prima bloccavano la coda).
-    if esiti:
-        manda("/motore/controlli", {"esiti": esiti})
-    log(f"controlli: {len(esiti)} post, {spariti} spariti, {esistono} esistono")
+                continue
+            if e["esito"] == "esiste" and e.get("post") and e["post"]["foto_totali"] > len(e["post"]["foto"]):
+                try:
+                    f = tutte_le_foto(page, x["id"])
+                    if len(f) > len(e["post"]["foto"]):
+                        e["post"]["foto"] = f
+                except Exception:
+                    pass
+            esiti.append(e)
+        spariti = sum(1 for e in esiti if e["esito"] == "sparito")
+        esistono = sum(1 for e in esiti if e["esito"] == "esiste")
+        # Se Facebook si e' scollegato, o nessun post risulta esistente e molti "spariti" (pagina
+        # rotta), non si toglie niente e ci si ferma.
+        if stato(ctx, page) != "collegato" or (spariti >= 3 and not esistono):
+            log(f"controlli: {len(esiti)} post, {spariti} spariti, NON inviati")
+            return
+        if not esiti:
+            break
+        # Anche gli incerti si mandano: il server li rimette in coda piu' tardi.
+        r = manda("/motore/controlli", {"esiti": esiti}) or {}
+        tot += len(esiti)
+        spar += spariti
+    log(f"controlli: {tot} post, {spar} spariti")
 
 
 MEMORIA.parent.mkdir(parents=True, exist_ok=True)
