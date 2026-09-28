@@ -221,8 +221,13 @@ def post_da(risposte):
                 def dentro(x):
                     # Chi ha pubblicato (solo il numero del profilo, non il nome): serve a riconoscere
                     # lo stesso annuncio scritto in lingue diverse o ripubblicato con altre parole.
+                    # Nei dati del gruppo l'autore sta in feedback.owning_profile (accanto a post_id);
+                    # "actors" c'e' solo nel nodo esterno (visto sulla pagina vera il 28/09/2026).
                     a = x.get("actors")
-                    if not p["autore"] and isinstance(a, list) and a and isinstance(a[0], dict) and a[0].get("id"):
+                    o = x.get("owning_profile")
+                    if not p["autore"] and isinstance(o, dict) and o.get("id"):
+                        p["autore"] = str(o["id"])
+                    elif not p["autore"] and isinstance(a, list) and a and isinstance(a[0], dict) and a[0].get("id"):
                         p["autore"] = str(a[0]["id"])
                     if isinstance(x.get("creation_time"), int) and not p["tempo"]:
                         p["tempo"] = x["creation_time"]
