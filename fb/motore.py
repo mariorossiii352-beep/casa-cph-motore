@@ -76,7 +76,9 @@ def tutte_le_foto(page, post_id):
     return [u for _, u in foto.values()]
 
 
-INDISPONIBILE = re.compile(r"(content isn.t available|isn.t available right now|indhold er ikke tilg.ngeligt|Dette indhold er ikke)", re.I)
+# Anche in italiano: l'account del motore usa Facebook in italiano (fino al 28/09/2026 mancava e i
+# post cancellati restavano "incerti", cioe' nell'app per sempre).
+INDISPONIBILE = re.compile(r"(content isn.t available|isn.t available right now|indhold er ikke tilg.ngeligt|Dette indhold er ikke|contenuto non . (?:al momento )?disponibile|contenuto non .{0,3}disponibile)", re.I)
 
 
 def controlla_post(page, url, pid, pezzo=""):
@@ -123,14 +125,16 @@ def controlli(ctx, page, fine):
                 pass
         esiti.append(e)
     spariti = sum(1 for e in esiti if e["esito"] == "sparito")
-    # Se Facebook si e' scollegato o sembrano spariti quasi tutti, non si toglie niente.
-    if stato(ctx, page) != "collegato" or (esiti and spariti > max(2, len(esiti) // 2)):
+    esistono = sum(1 for e in esiti if e["esito"] == "esiste")
+    # Se Facebook si e' scollegato, o nessun post risulta esistente e molti "spariti" (pagina rotta),
+    # non si toglie niente.
+    if stato(ctx, page) != "collegato" or (spariti >= 3 and not esistono):
         log(f"controlli: {len(esiti)} post, {spariti} spariti, NON inviati")
         return
-    certi = [e for e in esiti if e["esito"] != "incerto"]
-    if certi:
-        manda("/motore/controlli", {"esiti": certi})
-    log(f"controlli: {len(esiti)} post, {spariti} spariti, {len(esiti) - len(certi)} incerti")
+    # Anche gli incerti si mandano: il server li rimette in coda piu' tardi (prima bloccavano la coda).
+    if esiti:
+        manda("/motore/controlli", {"esiti": esiti})
+    log(f"controlli: {len(esiti)} post, {spariti} spariti, {esistono} esistono")
 
 
 MEMORIA.parent.mkdir(parents=True, exist_ok=True)
