@@ -93,7 +93,7 @@ def controlla_post(page, url, pid, pezzo=""):
     p = posts.get(str(pid)) or next((x for x in posts.values() if chiave and chiave in norma(x["testo"])), None)
     if p and p["testo"]:
         return {"id": pid, "esito": "esiste", "post": {"testo": p["testo"], "tempo": p["tempo"], "url": url,
-                "foto": [u for u in p["foto"].values() if u], "foto_totali": p["foto_totali"]}}
+                "foto": [u for u in p["foto"].values() if u], "foto_totali": p["foto_totali"], "autore": p.get("autore")}}
     try:
         corpo = page.inner_text("body")
     except Exception:
@@ -216,7 +216,8 @@ with sync_playwright() as pw:
                 if p["tempo"] and time.time() - p["tempo"] > 10 * 86400:
                     continue
                 pp = {"id": p["id"], "url": p["url"], "testo": p["testo"], "tempo": p["tempo"],
-                      "foto": [u for u in p["foto"].values() if u], "foto_totali": p["foto_totali"]}
+                      "foto": [u for u in p["foto"].values() if u], "foto_totali": p["foto_totali"],
+                      "autore": p.get("autore")}
                 f = firma(pp)
                 if visti.get(p["id"]) == f:
                     continue

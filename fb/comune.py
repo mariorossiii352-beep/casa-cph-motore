@@ -212,13 +212,18 @@ def post_da(risposte):
                 if d.get("__typename") != "Story" or not d.get("post_id"):
                     return
                 p = tutti.setdefault(d["post_id"], {"id": d["post_id"], "testo": "", "tempo": None,
-                                                    "foto": {}, "foto_totali": 0, "url": None})
+                                                    "foto": {}, "foto_totali": 0, "url": None, "autore": None})
                 # Il testo del post stesso, se c'e' al primo livello, vale piu' di qualunque altro.
                 proprio = d.get("message") if isinstance(d.get("message"), dict) else None
                 if proprio and isinstance(proprio.get("text"), str) and proprio["text"]:
                     p["proprio"] = True
                     p["testo"] = proprio["text"]
                 def dentro(x):
+                    # Chi ha pubblicato (solo il numero del profilo, non il nome): serve a riconoscere
+                    # lo stesso annuncio scritto in lingue diverse o ripubblicato con altre parole.
+                    a = x.get("actors")
+                    if not p["autore"] and isinstance(a, list) and a and isinstance(a[0], dict) and a[0].get("id"):
+                        p["autore"] = str(a[0]["id"])
                     if isinstance(x.get("creation_time"), int) and not p["tempo"]:
                         p["tempo"] = x["creation_time"]
                     m = x.get("message")
