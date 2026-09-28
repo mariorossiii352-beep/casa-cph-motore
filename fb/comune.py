@@ -247,6 +247,24 @@ def post_da(risposte):
                         p["url"] = x["url"]
                 cammina(d, lambda x: isinstance(x, dict) and dentro(x), _ramo_da_saltare)
             cammina(obj, visita)
+    # Secondo passaggio per l'autore: Facebook manda i post anche a pezzi (non sempre con
+    # __typename "Story"); qualunque pezzo con lo stesso post_id e l'autore accanto va bene.
+    senza = {pid for pid, p in tutti.items() if not p.get("autore")}
+    if senza:
+        def cerca(d):
+            pid = d.get("post_id")
+            if pid not in senza or tutti[pid].get("autore"):
+                return
+            fb = d.get("feedback") if isinstance(d.get("feedback"), dict) else {}
+            o = fb.get("owning_profile") or d.get("owning_profile")
+            a = d.get("actors")
+            if isinstance(o, dict) and o.get("id"):
+                tutti[pid]["autore"] = str(o["id"])
+            elif isinstance(a, list) and a and isinstance(a[0], dict) and a[0].get("id"):
+                tutti[pid]["autore"] = str(a[0]["id"])
+        for body in risposte:
+            for obj in oggetti(body):
+                cammina(obj, lambda x: isinstance(x, dict) and cerca(x), _ramo_da_saltare)
     for p in tutti.values():
         p.pop("proprio", None)
     return tutti
