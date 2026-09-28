@@ -177,6 +177,11 @@ with sync_playwright() as pw:
                 break
             try:
                 posts = leggi_gruppo(page, gid)
+                import comune as _c
+                if _c.CAMPI_AUTORE is not None and not getattr(_c, "CAMPI_MANDATI", False):
+                    _c.CAMPI_MANDATI = True
+                    manda("/motore/stato", {"campi_autore": _c.CAMPI_AUTORE,
+                                            "con_autore": sum(1 for x in posts.values() if x.get("autore")), "post": len(posts)})
             except Exception as e:
                 errori += 1
                 log(f"giro {giro} gruppo #{i}: errore {type(e).__name__}")

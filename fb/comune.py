@@ -283,4 +283,30 @@ def leggi_gruppo(page, gid, scroll=8):
             page.mouse.wheel(0, random.randint(1900, 2700))
             time.sleep(random.uniform(1.8, 3.4))
         time.sleep(random.uniform(1.5, 3))
-    return post_da(registra(page, azione))
+    risposte = registra(page, azione)
+    global CAMPI_AUTORE
+    if CAMPI_AUTORE is None:
+        CAMPI_AUTORE = campi_autore(risposte)
+    return post_da(risposte)
+
+
+# Diagnosi (una volta per avvio): dove stanno i campi dell'autore nei dati del gruppo. Solo
+# percorsi e nomi dei campi, mai nomi o numeri di persone.
+CAMPI_AUTORE = None
+def campi_autore(risposte):
+    visti = {}
+    def giro(o, strada, dentro_story):
+        if isinstance(o, dict):
+            story = dentro_story or (o.get("__typename") == "Story" and bool(o.get("post_id")))
+            for k, v in o.items():
+                if re.search(r"actor|owning|author|owner|poster|creator", str(k), re.I):
+                    chiave = f"{strada[-40:]}>{k} [{type(v).__name__}] story_con_post_id={story}"
+                    visti[chiave] = visti.get(chiave, 0) + 1
+                giro(v, f"{strada}.{k}" if len(strada) < 200 else strada, story)
+        elif isinstance(o, list):
+            for v in o[:30]:
+                giro(v, strada + "[]", dentro_story)
+    for body in risposte:
+        for obj in oggetti(body):
+            giro(obj, "", False)
+    return sorted(visti, key=lambda k: -visti[k])[:60]
