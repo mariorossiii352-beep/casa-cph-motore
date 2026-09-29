@@ -1,0 +1,26 @@
+name: findbolig
+
+# Legge le case libere di Findbolig e le manda all'app. Il sito non si puo' leggere da
+# Cloudflare (certificato incompleto, errore 526): per questo gira qui.
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "7,27,47 * * * *"
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: findbolig
+  cancel-in-progress: false
+
+jobs:
+  lettura:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Lettura
+        working-directory: fb
+        run: python3 findbolig.py
