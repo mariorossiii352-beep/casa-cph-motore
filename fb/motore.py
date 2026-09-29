@@ -256,6 +256,9 @@ with sync_playwright() as pw:
         durata = round((time.time() - t0) / 60)
         log(f"FINE GIRO {giro}: post={letti} nuovi={nuovi} offerte={offerte} errori={errori} minuti={durata}")
         manda("/motore/stato", {"post": letti, "note": f"giro {giro}: {len(GRUPPI)} gruppi in {durata} min, {nuovi} post nuovi, {offerte} offerte"})
+        import comune as _c
+        if _c.NOMI_GRUPPI:
+            manda("/motore/stato", {"nomi_gruppi": _c.NOMI_GRUPPI})
         # Tiene la memoria piccola: bastano i post degli ultimi giorni.
         if len(visti) > 20000:
             visti = dict(list(visti.items())[-12000:])

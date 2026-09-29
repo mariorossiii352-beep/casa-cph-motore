@@ -302,10 +302,21 @@ def leggi_gruppo(page, gid, scroll=8):
             time.sleep(random.uniform(1.8, 3.4))
         time.sleep(random.uniform(1.5, 3))
     risposte = registra(page, azione)
+    # Il nome del gruppo (dal titolo della pagina): va solo all'app, mai nei log pubblici.
+    try:
+        nome = re.sub(r"^\(\d+\+?\)\s*", "", page.title())
+        nome = re.sub(r"\s*\|\s*Facebook\s*$", "", nome).strip()
+        if nome and nome.lower() != "facebook":
+            NOMI_GRUPPI[gid] = nome
+    except Exception:
+        pass
     global CAMPI_AUTORE
     if CAMPI_AUTORE is None:
         CAMPI_AUTORE = campi_autore(risposte)
     return post_da(risposte)
+
+
+NOMI_GRUPPI = {}
 
 
 # Diagnosi (una volta per avvio): dove stanno i campi dell'autore nei dati del gruppo. Solo
