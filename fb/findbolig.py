@@ -92,5 +92,24 @@ def main():
     return 0 if esito is not None else 1
 
 
+PAUSA = 20 * 60
+
+
+def ciclo(minuti):
+    """Una lettura ogni 20 minuti per `minuti` minuti. Un errore salta un giro, non ferma il ciclo:
+    il workflow deve finire bene per ripartire da solo (gli orari automatici di GitHub non bastano:
+    il 29-30/09/2026 ha lanciato 3 esecuzioni in 16 ore invece di 48)."""
+    fine = time.time() + minuti * 60
+    while True:
+        t0 = time.time()
+        try:
+            main()
+        except Exception as e:
+            log(f"findbolig: errore {type(e).__name__}")
+        if time.time() + PAUSA > fine:
+            return 0
+        time.sleep(max(60, t0 + PAUSA - time.time()))
+
+
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(ciclo(int(sys.argv[1])) if len(sys.argv) > 1 else main())

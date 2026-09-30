@@ -2,13 +2,17 @@ name: findbolig
 
 # Legge le case libere di Findbolig e le manda all'app. Il sito non si puo' leggere da
 # Cloudflare (certificato incompleto, errore 526): per questo gira qui.
+# Come il motore di Facebook: resta acceso circa 5 ore e mezza (una lettura ogni 20 minuti),
+# poi riparte da solo. Gli orari automatici di GitHub da soli non bastano (il 29-30/09/2026:
+# 3 esecuzioni in 16 ore invece di 48): l'orario resta solo come rete di sicurezza.
 on:
   workflow_dispatch:
   schedule:
-    - cron: "7,27,47 * * * *"
+    - cron: "7,37 * * * *"
 
 permissions:
   contents: read
+  actions: write
   id-token: write
 
 concurrency:
@@ -18,9 +22,14 @@ concurrency:
 jobs:
   lettura:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 350
+    env:
+      GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v4
       - name: Lettura
         working-directory: fb
-        run: python3 findbolig.py
+        run: python3 findbolig.py 330
+      - name: Riparte
+        if: success()
+        run: gh workflow run findbolig.yml -R "$GITHUB_REPOSITORY" --ref main
