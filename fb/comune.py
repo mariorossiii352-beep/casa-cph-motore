@@ -291,16 +291,26 @@ def leggi_gruppo(page, gid, scroll=8):
     # Ritmo da persona: pause un po' diverse ogni volta e meno scorrimento (ogni 30 minuti
     # bastano gli ultimi post). Il 23/09/2026 un ritmo piu' fitto ha fatto bloccare la lettura
     # dei gruppi da Facebook per un giorno e mezzo.
+    cima = []  # cosa mostra la pagina appena aperta (i post piu' nuovi), per la misura di copertura
+
+    def scorri(n):
+        for _ in range(n):
+            page.mouse.move(random.randint(450, 750), random.randint(380, 620))
+            page.mouse.wheel(0, random.randint(1900, 2700))
+            time.sleep(random.uniform(1.8, 3.4))
+        time.sleep(random.uniform(1.5, 3))
+
     def azione():
         page.goto(f"https://www.facebook.com/groups/{gid}/?sorting_setting=CHRONOLOGICAL",
                   wait_until="domcontentloaded", timeout=60000)
         time.sleep(random.uniform(5, 8))
         page.keyboard.press("Escape")
-        for _ in range(scroll):
-            page.mouse.move(random.randint(450, 750), random.randint(380, 620))
-            page.mouse.wheel(0, random.randint(1900, 2700))
-            time.sleep(random.uniform(1.8, 3.4))
-        time.sleep(random.uniform(1.5, 3))
+        try:
+            cima.append(page.evaluate(_JS_CIMA))
+        except Exception:
+            pass
+        scorri(scroll)
+
     risposte = registra(page, azione)
     # Il nome del gruppo (dal titolo della pagina): va solo all'app, mai nei log pubblici.
     try:
@@ -314,9 +324,23 @@ def leggi_gruppo(page, gid, scroll=8):
     if CAMPI_AUTORE is None:
         CAMPI_AUTORE = campi_autore(risposte)
     posts = post_da(risposte)
-    # Misura (solo osservazione): i post che la pagina mostra e il motore non ha catturato.
+    # Profondita': tra due letture dello stesso gruppo passano 30 minuti. Se il post piu' vecchio letto
+    # e' uscito da meno di 50 minuti, in un gruppo molto attivo potrebbero restarne fuori: si scorre
+    # ancora (al massimo 6 volte) e si rilegge.
+    extra = 0
     try:
-        COPERTURA[gid] = misura_copertura(page, posts)
+        tempi = [p["tempo"] for p in posts.values() if p.get("tempo")]
+        if tempi and time.time() - min(tempi) < 50 * 60:
+            extra = 6
+            risposte += registra(page, lambda: scorri(extra))
+            posts = post_da(risposte)
+    except Exception:
+        pass
+    # Misura (solo osservazione, mai nei log pubblici): i post che la pagina mostra e il motore non ha catturato.
+    try:
+        m = misura_copertura(cima[0] if cima else None, posts)
+        m["scroll_extra"] = extra
+        COPERTURA[gid] = m
     except Exception:
         pass
     return posts
@@ -324,38 +348,42 @@ def leggi_gruppo(page, gid, scroll=8):
 
 NOMI_GRUPPI = {}
 
-# Copertura della lettura (02/10/2026, l'utente teme che il motore non catturi tutti i post): per ogni
-# gruppo, quanti post (articoli di primo livello) mostra la pagina dopo lo scorrimento e quanti di quelli
-# con testo non corrispondono a nessun post catturato. Con il solo testo della pagina, perche' Facebook
-# nasconde i link dei post finche' non ci si passa sopra con il mouse. Finisce solo nel database privato
-# dell'app (/motore/stato), nel registro pubblico vanno solo i totali.
+# Copertura della lettura (02/10/2026, l'utente teme che il motore non catturi tutti i post). Appena aperta
+# la pagina del gruppo si guarda cosa mostra in cima (i post piu' nuovi: la pagina tiene in memoria solo
+# quelli vicini a dove si e'): il testo dei messaggi dei post e dei blocchi del feed. Quelli che non
+# corrispondono a nessun post catturato sono post mostrati e persi. Funziona sul testo, perche' Facebook
+# nasconde i link dei post. Il primo tentativo contava "role=article", che su Facebook sono i COMMENTI:
+# misurava altro. Finisce solo nel database privato dell'app, nel registro pubblico solo i totali.
 COPERTURA = {}
-_JS_ARTICOLI = """() => {
-  const tutti = [...document.querySelectorAll('div[role="article"]')];
-  const alti = tutti.filter(a => !a.parentElement.closest('div[role="article"]'));
-  return alti.map(a => (a.innerText || '').slice(0, 700));
+_JS_CIMA = """() => {
+  const testi = (sel) => [...document.querySelectorAll(sel)].map(e => (e.innerText || '').slice(0, 320));
+  const messaggi = [...testi('[data-ad-preview="message"]'), ...testi('[data-ad-comet-preview="message"]')];
+  const feed = document.querySelector('div[role="feed"]');
+  const blocchi = feed ? [...feed.children].map(c => (c.innerText || '').slice(0, 500)) : [];
+  return {messaggi, blocchi, feed: !!feed, commenti: document.querySelectorAll('div[role="article"]').length};
 }"""
 
 
-def misura_copertura(page, posts):
-    testi = page.evaluate(_JS_ARTICOLI)
+def misura_copertura(cima, posts):
+    if not cima:
+        return None
     norm = lambda s: re.sub(r"\s+", " ", s or "").strip().lower()
     firme = [norm(p.get("testo"))[:30] for p in posts.values()]
     firme = [f for f in firme if len(f) >= 15]
-    con_testo = non_catturati = 0
-    esempi = []
-    for t in testi:
-        n = norm(t)
-        if len(n) < 80:  # posto vuoto della pagina virtualizzata, o solo intestazione
-            continue
-        con_testo += 1
-        if not any(f in n for f in firme):
-            non_catturati += 1
-            if len(esempi) < 3:
-                esempi.append(n[:200])
+    trovato = lambda n: any(f in n for f in firme)
+    # I messaggi dei post (testo del post, senza intestazione ne' commenti).
+    msg = [norm(t) for t in cima.get("messaggi", [])]
+    msg = [n for n in dict.fromkeys(msg) if len(n) >= 25]
+    msg_persi = [n for n in msg if not trovato(n)]
+    # I blocchi del feed (un blocco = un post con intestazione e reazioni): solo quelli con testo vero.
+    blocchi = [norm(t) for t in cima.get("blocchi", [])]
+    blocchi = [n for n in blocchi if len(n) >= 120 and "mi piace rispondi" not in n[:200]]
+    blocchi_persi = [n for n in blocchi if not trovato(n)]
     tempi = [p["tempo"] for p in posts.values() if p.get("tempo")]
-    return {"articoli": len(testi), "con_testo": con_testo, "non_catturati": non_catturati, "catturati": len(posts),
-            "piu_vecchio_min": round((time.time() - min(tempi)) / 60) if tempi else None, "esempi": esempi}
+    return {"messaggi": len(msg), "messaggi_persi": len(msg_persi), "blocchi": len(blocchi), "blocchi_persi": len(blocchi_persi),
+            "feed": bool(cima.get("feed")), "catturati": len(posts),
+            "piu_vecchio_min": round((time.time() - min(tempi)) / 60) if tempi else None,
+            "esempi": [n[:200] for n in (msg_persi or blocchi_persi)[:3]]}
 
 
 # Diagnosi (una volta per avvio): dove stanno i campi dell'autore nei dati del gruppo. Solo

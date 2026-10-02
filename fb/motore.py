@@ -261,8 +261,9 @@ with sync_playwright() as pw:
             manda("/motore/stato", {"nomi_gruppi": _c.NOMI_GRUPPI})
         if _c.COPERTURA:
             c = [x for x in _c.COPERTURA.values() if x]
-            log(f"COPERTURA giro {giro}: gruppi={len(c)} articoli={sum(x['articoli'] for x in c)} con_testo={sum(x['con_testo'] for x in c)} "
-                f"non_catturati={sum(x['non_catturati'] for x in c)} catturati={sum(x['catturati'] for x in c)}")
+            log(f"COPERTURA giro {giro}: gruppi={len(c)} messaggi={sum(x['messaggi'] for x in c)} messaggi_persi={sum(x['messaggi_persi'] for x in c)} "
+                f"blocchi={sum(x['blocchi'] for x in c)} blocchi_persi={sum(x['blocchi_persi'] for x in c)} catturati={sum(x['catturati'] for x in c)} "
+                f"scroll_extra={sum(1 for x in c if x.get('scroll_extra'))}")
             manda("/motore/stato", {"copertura": _c.COPERTURA, "giro": giro})
             _c.COPERTURA = {}
         # Tiene la memoria piccola: bastano i post degli ultimi giorni.
