@@ -367,17 +367,20 @@ _JS_CIMA = """() => {
 def misura_copertura(cima, posts):
     if not cima:
         return None
-    norm = lambda s: re.sub(r"\s+", " ", s or "").strip().lower()
-    firme = [norm(p.get("testo"))[:30] for p in posts.values()]
-    firme = [f for f in firme if len(f) >= 15]
+    # Solo lettere e cifre: la pagina non mostra le emoji nel testo e taglia i post lunghi con "... altro".
+    norm = lambda s: re.sub(r"\s+", " ", re.sub(r"[^\w]+", " ", (s or "").lower())).strip()
+    firme = [norm(p.get("testo"))[:18] for p in posts.values()]
+    firme = [f for f in firme if len(f) >= 12]
     trovato = lambda n: any(f in n for f in firme)
+    # Blocchi finti di Facebook ("facebook facebook facebook ..."): non sono post.
+    veri = lambda n: len(set(n.split())) > 4
     # I messaggi dei post (testo del post, senza intestazione ne' commenti).
     msg = [norm(t) for t in cima.get("messaggi", [])]
-    msg = [n for n in dict.fromkeys(msg) if len(n) >= 25]
+    msg = [n for n in dict.fromkeys(msg) if len(n) >= 25 and veri(n)]
     msg_persi = [n for n in msg if not trovato(n)]
     # I blocchi del feed (un blocco = un post con intestazione e reazioni): solo quelli con testo vero.
     blocchi = [norm(t) for t in cima.get("blocchi", [])]
-    blocchi = [n for n in blocchi if len(n) >= 120 and "mi piace rispondi" not in n[:200]]
+    blocchi = [n for n in blocchi if len(n) >= 120 and veri(n) and "mi piace rispondi" not in n[:200]]
     blocchi_persi = [n for n in blocchi if not trovato(n)]
     tempi = [p["tempo"] for p in posts.values() if p.get("tempo")]
     return {"messaggi": len(msg), "messaggi_persi": len(msg_persi), "blocchi": len(blocchi), "blocchi_persi": len(blocchi_persi),
