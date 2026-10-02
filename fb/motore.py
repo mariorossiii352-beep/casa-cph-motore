@@ -2,46 +2,20 @@
 
 Regole del registro pubblico: solo numeri. Nessun testo, nome o link.
 """
-import json, os, re, sys, time, hashlib, urllib.request
+import json, re, sys, time, hashlib
 from pathlib import Path
 from playwright.sync_api import sync_playwright
+import motore_invio
 from comune import apri, salva, stato, log, leggi_gruppo, registra, post_da, diagnosi_pagina, accesso_remoto
 
-APP = "https://casa-cph-nuova.mariorossiii352.workers.dev"
 MINUTI = int(sys.argv[1]) if len(sys.argv) > 1 else 330
 GRUPPI = json.loads((Path(__file__).parent / "gruppi.json").read_text())
 MEMORIA = Path.home() / "memoria-fb" / "visti.json"
 
 
-_TOKEN = {"v": None, "t": 0}
-
-
-def token_github():
-    # Il token firmato da GitHub vale qualche minuto: si riusa per 4 (lo schermo per l'accesso
-    # dal telefono manda piu' richieste al secondo).
-    if _TOKEN["v"] and time.time() - _TOKEN["t"] < 240:
-        return _TOKEN["v"]
-    url = os.environ["ACTIONS_ID_TOKEN_REQUEST_URL"] + "&audience=casa-cph"
-    req = urllib.request.Request(url, headers={"Authorization": "Bearer " + os.environ["ACTIONS_ID_TOKEN_REQUEST_TOKEN"]})
-    with urllib.request.urlopen(req, timeout=30) as r:
-        _TOKEN.update(v=json.load(r)["value"], t=time.time())
-    return _TOKEN["v"]
-
-
 def manda(percorso, dati):
-    corpo = json.dumps(dati).encode()
-    for tentativo in range(3):
-        try:
-            req = urllib.request.Request(APP + percorso, data=corpo, method="POST",
-                                         # Cloudflare respinge (errore 1010) il nome predefinito "Python-urllib".
-                                         headers={"Authorization": "Bearer " + token_github(), "content-type": "application/json",
-                                                  "User-Agent": "casa-cph-motore/1.0"})
-            with urllib.request.urlopen(req, timeout=120) as r:
-                return json.load(r)
-        except Exception as e:
-            log(f"invio {percorso} tentativo {tentativo + 1}: {type(e).__name__}")
-            time.sleep(10)
-    return None
+    # L'elaborazione di un blocco di post puo' richiedere piu' tempo: attesa lunga e pause piu' larghe.
+    return motore_invio.manda(percorso, dati, timeout=120, pausa=10)
 
 
 def firma(p):
