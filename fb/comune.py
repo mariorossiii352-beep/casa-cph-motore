@@ -313,10 +313,49 @@ def leggi_gruppo(page, gid, scroll=8):
     global CAMPI_AUTORE
     if CAMPI_AUTORE is None:
         CAMPI_AUTORE = campi_autore(risposte)
-    return post_da(risposte)
+    posts = post_da(risposte)
+    # Misura (solo osservazione): i post che la pagina mostra e il motore non ha catturato.
+    try:
+        COPERTURA[gid] = misura_copertura(page, posts)
+    except Exception:
+        pass
+    return posts
 
 
 NOMI_GRUPPI = {}
+
+# Copertura della lettura (02/10/2026, l'utente teme che il motore non catturi tutti i post): per ogni
+# gruppo, quanti post (articoli di primo livello) mostra la pagina dopo lo scorrimento e quanti di quelli
+# con testo non corrispondono a nessun post catturato. Con il solo testo della pagina, perche' Facebook
+# nasconde i link dei post finche' non ci si passa sopra con il mouse. Finisce solo nel database privato
+# dell'app (/motore/stato), nel registro pubblico vanno solo i totali.
+COPERTURA = {}
+_JS_ARTICOLI = """() => {
+  const tutti = [...document.querySelectorAll('div[role="article"]')];
+  const alti = tutti.filter(a => !a.parentElement.closest('div[role="article"]'));
+  return alti.map(a => (a.innerText || '').slice(0, 700));
+}"""
+
+
+def misura_copertura(page, posts):
+    testi = page.evaluate(_JS_ARTICOLI)
+    norm = lambda s: re.sub(r"\s+", " ", s or "").strip().lower()
+    firme = [norm(p.get("testo"))[:30] for p in posts.values()]
+    firme = [f for f in firme if len(f) >= 15]
+    con_testo = non_catturati = 0
+    esempi = []
+    for t in testi:
+        n = norm(t)
+        if len(n) < 80:  # posto vuoto della pagina virtualizzata, o solo intestazione
+            continue
+        con_testo += 1
+        if not any(f in n for f in firme):
+            non_catturati += 1
+            if len(esempi) < 3:
+                esempi.append(n[:200])
+    tempi = [p["tempo"] for p in posts.values() if p.get("tempo")]
+    return {"articoli": len(testi), "con_testo": con_testo, "non_catturati": non_catturati, "catturati": len(posts),
+            "piu_vecchio_min": round((time.time() - min(tempi)) / 60) if tempi else None, "esempi": esempi}
 
 
 # Diagnosi (una volta per avvio): dove stanno i campi dell'autore nei dati del gruppo. Solo

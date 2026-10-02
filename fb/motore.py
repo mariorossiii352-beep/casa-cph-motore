@@ -259,6 +259,12 @@ with sync_playwright() as pw:
         import comune as _c
         if _c.NOMI_GRUPPI:
             manda("/motore/stato", {"nomi_gruppi": _c.NOMI_GRUPPI})
+        if _c.COPERTURA:
+            c = [x for x in _c.COPERTURA.values() if x]
+            log(f"COPERTURA giro {giro}: gruppi={len(c)} articoli={sum(x['articoli'] for x in c)} con_testo={sum(x['con_testo'] for x in c)} "
+                f"non_catturati={sum(x['non_catturati'] for x in c)} catturati={sum(x['catturati'] for x in c)}")
+            manda("/motore/stato", {"copertura": _c.COPERTURA, "giro": giro})
+            _c.COPERTURA = {}
         # Tiene la memoria piccola: bastano i post degli ultimi giorni.
         if len(visti) > 20000:
             visti = dict(list(visti.items())[-12000:])
