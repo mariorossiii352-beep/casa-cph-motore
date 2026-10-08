@@ -373,7 +373,8 @@ def misura_copertura(cima, posts):
     firme = [f for f in firme if len(f) >= 12]
     trovato = lambda n: any(f in n for f in firme)
     # Blocchi finti di Facebook ("facebook facebook facebook ..."): non sono post.
-    veri = lambda n: len(set(n.split())) > 4
+    # (Facebook oscura il testo di molti blocchi con la parola "facebook" ripetuta: non e' leggibile, non si misura.)
+    veri = lambda n: len(set(n.split()) - {"facebook"}) > 4
     # I messaggi dei post (testo del post, senza intestazione ne' commenti).
     msg = [norm(t) for t in cima.get("messaggi", [])]
     msg = [n for n in dict.fromkeys(msg) if len(n) >= 25 and veri(n)]
