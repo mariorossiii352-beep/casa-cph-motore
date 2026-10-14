@@ -1,0 +1,45 @@
+name: bolighub
+
+# Legge Bolighub con un browser vero e manda le case all'app. Dal 13/10/2026 il sito blocca ogni lettura che non
+# viene da un browser (sfida di Cloudflare): per questo gira qui.
+# Come il motore di Facebook: resta acceso circa 5 ore e mezza (un ciclo ogni 10 minuti), poi riparte da solo.
+# L'orario resta solo come rete di sicurezza.
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "12,42 * * * *"
+
+permissions:
+  contents: read
+  actions: write
+  id-token: write
+
+concurrency:
+  group: bolighub
+  cancel-in-progress: false
+
+jobs:
+  lettura:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Browser
+        run: |
+          pip install playwright==1.62.0
+          python -m playwright install --with-deps chromium
+          sudo apt-get install -y -qq xvfb > /dev/null
+      - name: Lettura
+        working-directory: fb
+        run: |
+          Xvfb :99 -screen 0 1280x900x24 -nolisten tcp &
+          sleep 2
+          DISPLAY=:99 python bolighub.py 330
+      - name: Riparte
+        if: success()
+        run: gh workflow run bolighub.yml -R "$GITHUB_REPOSITORY" --ref main
