@@ -1,0 +1,29 @@
+name: prova_bolighub
+
+# Prova una tantum: Bolighub si legge da un browser vero su GitHub? (solo numeri nei registri)
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  prova:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Browser
+        run: |
+          pip install playwright==1.62.0
+          python -m playwright install --with-deps chromium
+          sudo apt-get install -y -qq xvfb > /dev/null
+      - name: Prova
+        working-directory: fb
+        run: |
+          Xvfb :99 -screen 0 1280x900x24 -nolisten tcp &
+          sleep 2
+          DISPLAY=:99 python prova_bolighub.py
