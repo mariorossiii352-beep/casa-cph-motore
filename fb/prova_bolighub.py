@@ -20,7 +20,18 @@ with sync_playwright() as pw:
         if not sfida:
             break
         time.sleep(5)
+    page.wait_for_load_state("networkidle", timeout=30000)
+    time.sleep(3)
     r = page.evaluate("""async (u) => { const r = await fetch(u); const t = await r.text(); return {s: r.status, n: t.length, ok: t.startsWith('{"type":"data"')}; }""", DATI)
     log(f"__data.json: stato={r['s']} byte={r['n']} formato_giusto={r['ok']}")
+    t0 = time.time()
+    quante = 0
+    for a in ["K%C3%B8benhavn+V", "K%C3%B8benhavn+%C3%98", "K%C3%B8benhavn+N", "K%C3%B8benhavn+S"]:
+        for pag in (1, 2):
+            u = f"https://www.bolighub.dk/en/properties-to-rent/__data.json?areas={a}&max_monthly_rent=16000&sort_by=newest" + (f"&page={pag}" if pag > 1 else "")
+            x = page.evaluate("async (u) => { const r = await fetch(u); const t = await r.text(); return [r.status, t.startsWith('{\"type\":\"data\"')]; }", u)
+            quante += 1
+            log(f"area {a[:12]} pagina {pag}: stato={x[0]} formato_giusto={x[1]}")
+    log(f"{quante} richieste in {int(time.time() - t0)} s")
     browser.close()
 sys.exit(0)
