@@ -68,16 +68,17 @@ def leggi(page, url):
 
 
 def ciclo(page):
+    """Un ciclo completo. Restituisce "ok", "bloccato" (tutte le pagine rifiutate dal sito) oppure "errore"."""
     esiti, giro, aperte, bloccate = [], 0, 0, 0
     while giro < MAX_GIRI:
         r = manda("/motore/bolighub", {"esiti": esiti, "round": giro}, timeout=180)
         if r is None:
             log("app non raggiungibile")
-            return False
+            return "errore"
         da = r.get("da_leggere", [])
         log(f"giro {giro}: ricevute {len(esiti)} pagine, richieste {len(da)}, verificati {r.get('verificati', 0)}")
         if not da:
-            return True
+            return "bloccato" if aperte >= 5 and bloccate >= aperte else "ok"
         esiti = []
         for u in da[:MAX_PER_GIRO]:
             e = leggi(page, u)
@@ -87,19 +88,36 @@ def ciclo(page):
             time.sleep(PAUSA)
         giro += 1
     log(f"ciclo interrotto dopo {MAX_GIRI} giri ({aperte} pagine aperte, {bloccate} bloccate)")
-    return True
+    return "bloccato" if aperte >= 5 and bloccate >= aperte else "ok"
+
+
+def apri_browser(pw):
+    """Google Chrome vero (c'e' sul computer di GitHub), altrimenti il browser di Playwright."""
+    try:
+        return pw.chromium.launch(headless=False, args=UA_ARGS, channel="chrome")
+    except Exception:
+        log("Chrome vero non disponibile: uso il browser di Playwright")
+        return pw.chromium.launch(headless=False, args=UA_ARGS)
 
 
 def main(minuti):
     fine = time.time() + minuti * 60
+    di_fila = 0  # cicli di fila con tutte le pagine rifiutate
     with sync_playwright() as pw:
-        browser = pw.chromium.launch(headless=False, args=UA_ARGS)
+        browser = apri_browser(pw)
         ctx = browser.new_context(viewport={"width": 1260, "height": 860}, locale="en-GB", timezone_id="Europe/Copenhagen")
         page = ctx.new_page()
         while time.time() < fine:
             t0 = time.time()
             try:
-                ciclo(page)
+                esito = ciclo(page)
+                di_fila = di_fila + 1 if esito == "bloccato" else 0
+                if di_fila >= 2:
+                    # Cloudflare lascia passare alcuni computer di GitHub e altri no (a seconda dell'indirizzo): si esce e la
+                    # riga "Riparte" del workflow avvia un computer nuovo, dopo una pausa per non martellare il sito.
+                    log("bloccato per 2 cicli di fila: riparto su un altro computer")
+                    time.sleep(300)
+                    break
             except Exception as e:
                 log(f"ciclo fallito: {type(e).__name__}")
                 try:
@@ -107,8 +125,11 @@ def main(minuti):
                 except Exception:
                     pass
                 page = ctx.new_page()
-            attesa = CICLO_S - (time.time() - t0)
-            if attesa > 0 and time.time() + attesa < fine:
+            # Se la pagina e' rifiutata si riprova prima (3 minuti); a fine turno si esce, senza giri a vuoto.
+            attesa = (180 if di_fila else CICLO_S) - (time.time() - t0)
+            if time.time() + max(attesa, 0) >= fine:
+                break
+            if attesa > 0:
                 time.sleep(attesa)
         browser.close()
     return 0
