@@ -51,6 +51,7 @@ def leggi(page, url):
                 break
             time.sleep(2)
         if sfida(page):
+            log(f"pagina rifiutata: stato_iniziale={stato} byte={len(page.content())}")
             return {"url": url, "stato": 403, "finale": page.url, "nodi": None}
         if stato == 403:
             stato = 200  # era la pagina della sfida, poi la pagina vera
