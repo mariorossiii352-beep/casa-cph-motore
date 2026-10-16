@@ -203,6 +203,23 @@ def _ramo_da_saltare(k):
     return "translat" in k or k in ("attached_story", "attached_story_", "comet_sections_attached")
 
 
+CHIAVI_IMMAGINE = ("image", "viewer_image", "photo_image", "large_share_image", "image_high", "full_image", "imageHigh")
+
+
+def immagine_di(foto):
+    """Il link dell'immagine di un nodo Photo. Facebook la mette sotto chiavi diverse a seconda del tipo di post
+    (16/10/2026: 115 case su 326 senza foto, si leggevano solo "image" e "viewer_image"): si prende la piu' grande."""
+    migliori = []
+    for k in CHIAVI_IMMAGINE:
+        v = foto.get(k)
+        if isinstance(v, dict) and isinstance(v.get("uri"), str) and "fbcdn" in v["uri"]:
+            migliori.append((v.get("width") or 0, v["uri"]))
+    t = foto.get("preferred_thumbnail")
+    if isinstance(t, dict) and isinstance(t.get("image"), dict) and isinstance(t["image"].get("uri"), str):
+        migliori.append((t["image"].get("width") or 0, t["image"]["uri"]))
+    return max(migliori)[1] if migliori else None
+
+
 def post_da(risposte):
     """Tutti i post (Story) trovati nelle risposte, con testo, data e foto."""
     tutti = {}
@@ -235,9 +252,9 @@ def post_da(risposte):
                     if not p.get("proprio") and isinstance(m, dict) and isinstance(m.get("text"), str) and len(m["text"]) > len(p["testo"]):
                         p["testo"] = m["text"]
                     if x.get("__typename") == "Photo" and x.get("id"):
-                        img = x.get("image") or x.get("viewer_image") or {}
-                        if isinstance(img, dict) and img.get("uri"):
-                            p["foto"][x["id"]] = img["uri"]
+                        uri = immagine_di(x)
+                        if uri:
+                            p["foto"][x["id"]] = uri
                         else:
                             p["foto"].setdefault(x["id"], None)
                     s = x.get("all_subattachments")
