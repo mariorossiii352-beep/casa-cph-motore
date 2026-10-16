@@ -337,9 +337,6 @@ def leggi_gruppo(page, gid, scroll=8):
             NOMI_GRUPPI[gid] = nome
     except Exception:
         pass
-    global CAMPI_AUTORE
-    if CAMPI_AUTORE is None:
-        CAMPI_AUTORE = campi_autore(risposte)
     posts = post_da(risposte)
     # Profondita': tra due letture dello stesso gruppo passano 30 minuti. Se il post piu' vecchio letto
     # e' uscito da meno di 50 minuti, in un gruppo molto attivo potrebbero restarne fuori: si scorre
@@ -407,23 +404,3 @@ def misura_copertura(cima, posts):
             "esempi": [n[:200] for n in (msg_persi or blocchi_persi)[:3]]}
 
 
-# Diagnosi (una volta per avvio): dove stanno i campi dell'autore nei dati del gruppo. Solo
-# percorsi e nomi dei campi, mai nomi o numeri di persone.
-CAMPI_AUTORE = None
-def campi_autore(risposte):
-    visti = {}
-    def giro(o, strada, dentro_story):
-        if isinstance(o, dict):
-            story = dentro_story or (o.get("__typename") == "Story" and bool(o.get("post_id")))
-            for k, v in o.items():
-                if re.search(r"actor|owning|author|owner|poster|creator", str(k), re.I):
-                    chiave = f"{strada[-40:]}>{k} [{type(v).__name__}] story_con_post_id={story}"
-                    visti[chiave] = visti.get(chiave, 0) + 1
-                giro(v, f"{strada}.{k}" if len(strada) < 200 else strada, story)
-        elif isinstance(o, list):
-            for v in o[:30]:
-                giro(v, strada + "[]", dentro_story)
-    for body in risposte:
-        for obj in oggetti(body):
-            giro(obj, "", False)
-    return sorted(visti, key=lambda k: -visti[k])[:60]
