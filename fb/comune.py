@@ -408,8 +408,21 @@ def misura_copertura(cima, posts):
         bw = set(n.split())
         return any(len(w & bw) >= 0.6 * len(w) for w in parole_post)
     persi_forti = [n for n in blocchi_persi if not corrisponde(n)]
+    # Misura che non dipende dal testo (Facebook lo scompone nella pagina: "n d o", "r t"): i blocchi del feed con l'ora scritta
+    # ("17 minuti fa", "3 ore fa") contro i post catturati con quell'ora (creation_time). Se i visibili sono piu' dei catturati,
+    # qualche post mostrato dalla pagina non e' stato catturato.
+    def minuti_fa(n):
+        m = re.search(r"\b(\d+) minut[io] fa", n)
+        if m: return int(m.group(1))
+        if re.search(r"\bun minuto fa", n): return 1
+        if re.search(r"\b(?:circa )?un ora fa", n): return 60
+        m = re.search(r"\b(\d+) ore fa", n)
+        return int(m.group(1)) * 60 if m else None
+    visibili_ora = [x for x in (minuti_fa(n) for n in [norm(t) for t in cima.get("blocchi", [])] if len(n) >= 40) if x is not None and x <= 180]
+    adesso = time.time()
+    catturati_ora = [1 for p in posts.values() if p.get("tempo") and adesso - p["tempo"] <= 200 * 60]
     tempi = [p["tempo"] for p in posts.values() if p.get("tempo")]
-    return {"messaggi": len(msg), "messaggi_persi": len(msg_persi), "blocchi": len(blocchi), "blocchi_persi": len(blocchi_persi), "persi_forti": len(persi_forti),
+    return {"visibili_ora": len(visibili_ora), "catturati_ora": len(catturati_ora), "messaggi": len(msg), "messaggi_persi": len(msg_persi), "blocchi": len(blocchi), "blocchi_persi": len(blocchi_persi), "persi_forti": len(persi_forti),
             "feed": bool(cima.get("feed")), "catturati": len(posts),
             "piu_vecchio_min": round((time.time() - min(tempi)) / 60) if tempi else None,
             "esempi": [n[:450] for n in (msg_persi or persi_forti)[:5]]}
