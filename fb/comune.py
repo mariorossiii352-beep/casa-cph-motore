@@ -397,10 +397,21 @@ def misura_copertura(cima, posts):
     blocchi = [norm(t) for t in cima.get("blocchi", [])]
     blocchi = [n for n in blocchi if len(n) >= 120 and veri(n) and "mi piace rispondi" not in n[:200]]
     blocchi_persi = [n for n in blocchi if not trovato(n)]
+    # Confronto piu' robusto (19/10/2026): la prova sui primi 18 caratteri sbaglia se Facebook oscura o cambia l'inizio. Un blocco
+    # corrisponde a un post catturato se contiene almeno il 60% delle sue prime parole "vere" (4+ lettere).
+    parole_post = []
+    for p in posts.values():
+        w = [x for x in norm(p.get("testo")).split() if len(x) >= 4][:14]
+        if len(w) >= 5:
+            parole_post.append(set(w))
+    def corrisponde(n):
+        bw = set(n.split())
+        return any(len(w & bw) >= 0.6 * len(w) for w in parole_post)
+    persi_forti = [n for n in blocchi_persi if not corrisponde(n)]
     tempi = [p["tempo"] for p in posts.values() if p.get("tempo")]
-    return {"messaggi": len(msg), "messaggi_persi": len(msg_persi), "blocchi": len(blocchi), "blocchi_persi": len(blocchi_persi),
+    return {"messaggi": len(msg), "messaggi_persi": len(msg_persi), "blocchi": len(blocchi), "blocchi_persi": len(blocchi_persi), "persi_forti": len(persi_forti),
             "feed": bool(cima.get("feed")), "catturati": len(posts),
             "piu_vecchio_min": round((time.time() - min(tempi)) / 60) if tempi else None,
-            "esempi": [n[:200] for n in (msg_persi or blocchi_persi)[:3]]}
+            "esempi": [n[:450] for n in (msg_persi or persi_forti)[:5]]}
 
 
