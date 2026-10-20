@@ -12,6 +12,31 @@ MINUTI = int(sys.argv[1]) if len(sys.argv) > 1 else 330
 GRUPPI = json.loads((Path(__file__).parent / "gruppi.json").read_text())
 MEMORIA = Path.home() / "memoria-fb" / "visti.json"
 
+# Gruppi letti: la lista fissa piu' quelli di case a cui l'account si iscrive dopo (20/10/2026: l'utente si e' iscritto a "Kollektiver i
+# Kobenhavn" e le sue case non arrivavano finche' non lo aggiungeva qualcuno a mano). Ogni 4 giri si rilegge l'elenco dei gruppi
+# dell'account; quelli con un nome da case si aggiungono da soli e la prima volta si leggono in profondita' (post dei giorni scorsi).
+ATTIVI = list(GRUPPI)
+PROFONDI = set()
+NOME_CASE = re.compile(r"(bolig|leje|lejlighed|værelse|vaerelse|roomie|roommate|kollektiv|bofælle|housing|apartment|rent|room|flat|sublet|udlej|accommodation|lejebolig)", re.I)
+NOME_NO = re.compile(r"(aalborg|aarhus|århus|odense|esbjerg|randers|kolding|horsens|silkeborg|viborg|bytte|swap|gratis|free stuff|til salg i|sælges)", re.I)
+
+
+def scopri_gruppi(page, elenca):
+    """Aggiunge ai gruppi letti quelli di case dell'account che mancano. Ritorna quanti ne ha aggiunti."""
+    elenco = elenca(page)
+    manda("/motore/stato", {"gruppi_account": elenco})
+    gia = set(ATTIVI)
+    aggiunti = 0
+    for g in elenco:
+        nome = g.get("nome") or ""
+        if g["id"] in gia or not NOME_CASE.search(nome) or NOME_NO.search(nome):
+            continue
+        ATTIVI.append(g["id"])
+        PROFONDI.add(g["id"])
+        aggiunti += 1
+    log(f"GRUPPI account: iscritto a {len(elenco)}, letti {len(ATTIVI)}, aggiunti ora {aggiunti}")
+    return aggiunti
+
 
 def manda(percorso, dati):
     # L'elaborazione di un blocco di post puo' richiedere piu' tempo: attesa lunga e pause piu' larghe.
@@ -142,22 +167,26 @@ with sync_playwright() as pw:
         time.sleep(5)
     # Una volta a ogni avvio: i gruppi a cui l'account e' iscritto, per vedere se ce ne sono di case non letti (solo nel database privato).
     try:
-        elenco = elenca_gruppi_account(page)
-        manda("/motore/stato", {"gruppi_account": elenco})
-        log(f"GRUPPI account: iscritto a {len(elenco)}, letti dal motore {len(GRUPPI)}")
+        scopri_gruppi(page, elenca_gruppi_account)
     except Exception as e:
         log(f"GRUPPI account: errore {type(e).__name__}")
     giro = 0
     while time.time() < fine and esito == 0:
         giro += 1
+        if giro > 1 and giro % 4 == 1:
+            try:
+                scopri_gruppi(page, elenca_gruppi_account)
+            except Exception as e:
+                log(f"GRUPPI account: errore {type(e).__name__}")
         t0 = time.time()
         letti = nuovi = offerte = errori = 0
         vuoti_di_fila = 0
-        for i, gid in enumerate(GRUPPI):
+        for i, gid in enumerate(list(ATTIVI)):
             if time.time() > fine:
                 break
             try:
-                posts = leggi_gruppo(page, gid)
+                posts = leggi_gruppo(page, gid, scroll=30 if gid in PROFONDI else 8)
+                PROFONDI.discard(gid)
             except Exception as e:
                 errori += 1
                 log(f"giro {giro} gruppo #{i}: errore {type(e).__name__}")
@@ -231,7 +260,7 @@ with sync_playwright() as pw:
             log(f"giro {giro} gruppo #{i}: post={len(posts)} inviati={len(da_mandare)}")
         durata = round((time.time() - t0) / 60)
         log(f"FINE GIRO {giro}: post={letti} nuovi={nuovi} offerte={offerte} errori={errori} minuti={durata}")
-        manda("/motore/stato", {"post": letti, "note": f"giro {giro}: {len(GRUPPI)} gruppi in {durata} min, {nuovi} post nuovi, {offerte} offerte"})
+        manda("/motore/stato", {"post": letti, "note": f"giro {giro}: {len(ATTIVI)} gruppi in {durata} min, {nuovi} post nuovi, {offerte} offerte"})
         import comune as _c
         if _c.NOMI_GRUPPI:
             manda("/motore/stato", {"nomi_gruppi": _c.NOMI_GRUPPI})
