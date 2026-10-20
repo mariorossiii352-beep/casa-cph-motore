@@ -354,6 +354,25 @@ def leggi_gruppo(page, gid, scroll=8):
     try:
         m = misura_copertura(cima[0] if cima else None, posts)
         m["scroll_extra"] = extra
+        # Post mostrati dalla pagina e non catturati: si aprono direttamente (al massimo 3 per gruppo e per giro) e si aggiungono ai
+        # post letti. E' il recupero di quello che la lettura del feed perde (20/10/2026: l'utente trova su Facebook case che l'app non ha).
+        mancanti = m.pop("id_mancanti", [])
+        recuperati = 0
+        for pid in mancanti[:3]:
+            try:
+                def apri_post(pid=pid):
+                    page.goto(f"https://www.facebook.com/groups/{gid}/posts/{pid}/", wait_until="domcontentloaded", timeout=60000)
+                    time.sleep(random.uniform(5, 7))
+                trovati = post_da(registra(page, apri_post))
+                p = trovati.get(pid) or next((x for x in trovati.values() if x.get("testo")), None)
+                if p and p.get("testo"):
+                    p["id"] = pid
+                    posts[pid] = p
+                    recuperati += 1
+            except Exception:
+                pass
+        m["id_mancanti_n"] = len(mancanti)
+        m["id_recuperati"] = recuperati
         COPERTURA[gid] = m
     except Exception:
         pass
@@ -374,7 +393,13 @@ _JS_CIMA = """() => {
   const messaggi = [...testi('[data-ad-preview="message"]'), ...testi('[data-ad-comet-preview="message"]')];
   const feed = document.querySelector('div[role="feed"]');
   const blocchi = feed ? [...feed.children].map(c => (c.innerText || '').slice(0, 500)) : [];
-  return {messaggi, blocchi, feed: !!feed, commenti: document.querySelectorAll('div[role="article"]').length};
+  // ID dei post mostrati (dai link alla data del post): confronto esatto con quelli catturati (20/10/2026).
+  const ids = [...new Set([...document.querySelectorAll('a[href*="/posts/"], a[href*="/permalink/"]')].map(a => {
+    const h = a.href; const k = h.includes('/posts/') ? '/posts/' : '/permalink/';
+    const id = (h.split(k)[1] || '').split('/')[0].split('?')[0];
+    return /^[0-9]+$/.test(id) ? id : null;
+  }).filter(Boolean))];
+  return {messaggi, blocchi, ids, feed: !!feed, commenti: document.querySelectorAll('div[role="article"]').length};
 }"""
 
 
@@ -422,7 +447,8 @@ def misura_copertura(cima, posts):
     adesso = time.time()
     catturati_ora = [1 for p in posts.values() if p.get("tempo") and adesso - p["tempo"] <= 200 * 60]
     tempi = [p["tempo"] for p in posts.values() if p.get("tempo")]
-    return {"visibili_ora": len(visibili_ora), "catturati_ora": len(catturati_ora), "messaggi": len(msg), "messaggi_persi": len(msg_persi), "blocchi": len(blocchi), "blocchi_persi": len(blocchi_persi), "persi_forti": len(persi_forti),
+    ids_dom = [str(x) for x in cima.get("ids", [])]
+    return {"id_dom": len(ids_dom), "id_mancanti": [x for x in ids_dom if x not in posts], "visibili_ora": len(visibili_ora), "catturati_ora": len(catturati_ora), "messaggi": len(msg), "messaggi_persi": len(msg_persi), "blocchi": len(blocchi), "blocchi_persi": len(blocchi_persi), "persi_forti": len(persi_forti),
             "feed": bool(cima.get("feed")), "catturati": len(posts),
             "piu_vecchio_min": round((time.time() - min(tempi)) / 60) if tempi else None,
             "esempi": [n[:450] for n in (msg_persi or persi_forti)[:5]]}
@@ -449,14 +475,21 @@ def elenca_gruppi_account(page):
     page.goto("https://www.facebook.com/groups/joins/", wait_until="domcontentloaded", timeout=60000)
     time.sleep(6)
     trovati = {}
-    for _ in range(14):
+    fermi = 0
+    # Si scorre finche' compaiono gruppi nuovi (il 20/10/2026 l'elenco si fermava sempre a 32 e un gruppo appena iscritto mancava):
+    # al massimo 70 scorrimenti, si smette dopo 6 di fila senza novita'.
+    for _ in range(70):
+        prima = len(trovati)
         try:
             for k, v in page.evaluate(_JS_GRUPPI).items():
                 if k not in trovati or len(v) > len(trovati[k]):
                     trovati[k] = v
         except Exception:
             pass
+        fermi = fermi + 1 if len(trovati) == prima else 0
+        if fermi >= 6:
+            break
         page.mouse.move(640, 500)
-        page.mouse.wheel(0, 2500)
-        time.sleep(1.5)
+        page.mouse.wheel(0, 3500)
+        time.sleep(2.2)
     return [{"id": k, "nome": v} for k, v in trovati.items()]
