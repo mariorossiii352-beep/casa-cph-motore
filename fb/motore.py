@@ -6,7 +6,7 @@ import json, re, sys, time, hashlib
 from pathlib import Path
 from playwright.sync_api import sync_playwright
 import motore_invio
-from comune import apri, salva, stato, log, leggi_gruppo, registra, post_da, diagnosi_pagina, accesso_remoto
+from comune import apri, salva, stato, log, leggi_gruppo, registra, post_da, diagnosi_pagina, accesso_remoto, elenca_gruppi_account
 
 MINUTI = int(sys.argv[1]) if len(sys.argv) > 1 else 330
 GRUPPI = json.loads((Path(__file__).parent / "gruppi.json").read_text())
@@ -140,6 +140,13 @@ with sync_playwright() as pw:
         salva(ctx)
         page.goto("https://www.facebook.com/", wait_until="domcontentloaded")
         time.sleep(5)
+    # Una volta a ogni avvio: i gruppi a cui l'account e' iscritto, per vedere se ce ne sono di case non letti (solo nel database privato).
+    try:
+        elenco = elenca_gruppi_account(page)
+        manda("/motore/stato", {"gruppi_account": elenco})
+        log(f"GRUPPI account: iscritto a {len(elenco)}, letti dal motore {len(GRUPPI)}")
+    except Exception as e:
+        log(f"GRUPPI account: errore {type(e).__name__}")
     giro = 0
     while time.time() < fine and esito == 0:
         giro += 1

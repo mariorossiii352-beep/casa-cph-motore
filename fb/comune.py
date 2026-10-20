@@ -428,3 +428,35 @@ def misura_copertura(cima, posts):
             "esempi": [n[:450] for n in (msg_persi or persi_forti)[:5]]}
 
 
+
+
+_JS_GRUPPI = r"""() => {
+  const fuori = new Set(['joins', 'discover', 'feed', 'create', 'search', 'category', 'notifications', 'requests', 'recommendations']);
+  const out = {};
+  for (const a of document.querySelectorAll('a[href*="/groups/"]')) {
+    const m = a.href.match(/facebook\.com\/groups\/([^\/?#]+)/);
+    if (!m || fuori.has(m[1])) continue;
+    const nome = ((a.getAttribute('aria-label') || a.innerText || '').trim().split('\n')[0] || '').slice(0, 90);
+    if (!(m[1] in out) || nome.length > out[m[1]].length) out[m[1]] = nome;
+  }
+  return out;
+}"""
+
+
+def elenca_gruppi_account(page):
+    """I gruppi a cui l'account e' iscritto (19/10/2026: un post di una casa non era nell'app e potrebbe stare in un gruppo non letto).
+    Ritorna [{id, nome}]. I nomi vanno solo nel database privato dell'app, mai nel registro pubblico."""
+    page.goto("https://www.facebook.com/groups/joins/", wait_until="domcontentloaded", timeout=60000)
+    time.sleep(6)
+    trovati = {}
+    for _ in range(14):
+        try:
+            for k, v in page.evaluate(_JS_GRUPPI).items():
+                if k not in trovati or len(v) > len(trovati[k]):
+                    trovati[k] = v
+        except Exception:
+            pass
+        page.mouse.move(640, 500)
+        page.mouse.wheel(0, 2500)
+        time.sleep(1.5)
+    return [{"id": k, "nome": v} for k, v in trovati.items()]
