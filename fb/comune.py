@@ -493,3 +493,22 @@ def elenca_gruppi_account(page):
         page.mouse.wheel(0, 3500)
         time.sleep(2.2)
     return [{"id": k, "nome": v} for k, v in trovati.items()]
+
+
+def cerca_gruppo_per_nome(page, testo, riconosci):
+    """Cerca un gruppo con la ricerca di Facebook (20/10/2026: la pagina dei gruppi a cui si e' iscritti non mostrava quello appena
+    iscritto). `riconosci` e' una parte minuscola del nome. Ritorna {id, nome} o None."""
+    from urllib.parse import quote
+    page.goto(f"https://www.facebook.com/search/groups/?q={quote(testo)}", wait_until="domcontentloaded", timeout=60000)
+    time.sleep(7)
+    for _ in range(3):
+        try:
+            for k, v in page.evaluate(_JS_GRUPPI).items():
+                if riconosci in (v or "").lower() and k not in ("search",):
+                    return {"id": k, "nome": v}
+        except Exception:
+            pass
+        page.mouse.move(640, 500)
+        page.mouse.wheel(0, 2000)
+        time.sleep(2)
+    return None

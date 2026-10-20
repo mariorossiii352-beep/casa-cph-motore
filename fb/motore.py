@@ -6,7 +6,7 @@ import json, re, sys, time, hashlib
 from pathlib import Path
 from playwright.sync_api import sync_playwright
 import motore_invio
-from comune import apri, salva, stato, log, leggi_gruppo, registra, post_da, diagnosi_pagina, accesso_remoto, elenca_gruppi_account
+from comune import apri, salva, stato, log, leggi_gruppo, registra, post_da, diagnosi_pagina, accesso_remoto, elenca_gruppi_account, cerca_gruppo_per_nome
 
 MINUTI = int(sys.argv[1]) if len(sys.argv) > 1 else 330
 GRUPPI = json.loads((Path(__file__).parent / "gruppi.json").read_text())
@@ -21,9 +21,22 @@ NOME_CASE = re.compile(r"(bolig|leje|lejlighed|værelse|vaerelse|roomie|roommate
 NOME_NO = re.compile(r"(aalborg|aarhus|århus|odense|esbjerg|randers|kolding|horsens|silkeborg|viborg|bytte|swap|gratis|free stuff|til salg i|sælges)", re.I)
 
 
+# Gruppi che la pagina "gruppi a cui sei iscritto" non mostra (es. appena iscritto): si cercano per nome. (testo da cercare, parte del nome)
+CERCA_PER_NOME = [("Kollektiver i København", "kollektiver i k")]
+
+
 def scopri_gruppi(page, elenca):
     """Aggiunge ai gruppi letti quelli di case dell'account che mancano. Ritorna quanti ne ha aggiunti."""
     elenco = elenca(page)
+    for testo, riconosci in CERCA_PER_NOME:
+        if not any(riconosci in (g.get("nome") or "").lower() for g in elenco):
+            try:
+                g = cerca_gruppo_per_nome(page, testo, riconosci)
+                if g:
+                    elenco.append(g)
+                    log("GRUPPI account: un gruppo cercato per nome e' stato trovato")
+            except Exception as e:
+                log(f"GRUPPI account: ricerca per nome, errore {type(e).__name__}")
     manda("/motore/stato", {"gruppi_account": elenco})
     gia = set(ATTIVI)
     aggiunti = 0
