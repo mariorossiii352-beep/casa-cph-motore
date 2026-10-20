@@ -16,7 +16,7 @@ MEMORIA = Path.home() / "memoria-fb" / "visti.json"
 # Kobenhavn" e le sue case non arrivavano finche' non lo aggiungeva qualcuno a mano). Ogni 4 giri si rilegge l'elenco dei gruppi
 # dell'account; quelli con un nome da case si aggiungono da soli e la prima volta si leggono in profondita' (post dei giorni scorsi).
 ATTIVI = list(GRUPPI)
-PROFONDI = set()
+PROFONDI = {"kollektiverikobenhavn"}  # iscritto il 20/10/2026: la prima lettura e' in profondita' (se non salva si ripete)
 NOME_CASE = re.compile(r"(bolig|leje|lejlighed|værelse|vaerelse|roomie|roommate|kollektiv|bofælle|housing|apartment|rent|room|flat|sublet|udlej|accommodation|lejebolig)", re.I)
 NOME_NO = re.compile(r"(aalborg|aarhus|århus|odense|esbjerg|randers|kolding|horsens|silkeborg|viborg|bytte|swap|gratis|free stuff|til salg i|sælges)", re.I)
 
@@ -198,8 +198,10 @@ with sync_playwright() as pw:
             if time.time() > fine:
                 break
             try:
-                posts = leggi_gruppo(page, gid, scroll=30 if gid in PROFONDI else 8)
+                fu_profonda = gid in PROFONDI
+                posts = leggi_gruppo(page, gid, scroll=30 if fu_profonda else 8)
                 PROFONDI.discard(gid)
+                riprova_profonda = False
             except Exception as e:
                 errori += 1
                 log(f"giro {giro} gruppo #{i}: errore {type(e).__name__}")
@@ -250,8 +252,12 @@ with sync_playwright() as pw:
                 r = manda("/motore/facebook", {"gruppo": gid, "posts": [x[0] for x in blocco]})
                 if r is None:
                     errori += 1
+                    riprova_profonda = fu_profonda
                     continue
                 falliti = set(r.get("falliti") or [])
+                # Letto in profondita' ma il server non ha potuto salvare (es. archivio fermo): al giro dopo si rilegge in profondita'.
+                if falliti and fu_profonda:
+                    riprova_profonda = True
                 for pp, f in blocco:
                     if pp["id"] not in falliti:
                         visti[pp["id"]] = f
@@ -270,6 +276,8 @@ with sync_playwright() as pw:
                                 pp2 = dict(pp, foto=foto, foto_totali=max(len(foto), pp["foto_totali"]))
                                 if manda("/motore/facebook", {"gruppo": gid, "posts": [pp2]}) is not None:
                                     visti[pp["id"]] = firma(pp2)
+            if riprova_profonda:
+                PROFONDI.add(gid)
             log(f"giro {giro} gruppo #{i}: post={len(posts)} inviati={len(da_mandare)}")
         durata = round((time.time() - t0) / 60)
         log(f"FINE GIRO {giro}: post={letti} nuovi={nuovi} offerte={offerte} errori={errori} minuti={durata}")
