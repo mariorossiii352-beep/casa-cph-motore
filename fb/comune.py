@@ -354,11 +354,12 @@ def leggi_gruppo(page, gid, scroll=8):
     try:
         m = misura_copertura(cima[0] if cima else None, posts)
         m["scroll_extra"] = extra
-        # Post mostrati dalla pagina e non catturati: si aprono direttamente (al massimo 3 per gruppo e per giro) e si aggiungono ai
-        # post letti. E' il recupero di quello che la lettura del feed perde (20/10/2026: l'utente trova su Facebook case che l'app non ha).
+        # Post mostrati dalla pagina e non catturati: si aprono direttamente (al massimo 10 per gruppo e per giro; 3 fino al 21/10/2026,
+        # quando i siti sono stati messi in pausa e tutto il tempo va a Facebook) e si aggiungono ai post letti. E' il recupero di quello
+        # che la lettura del feed perde (20/10/2026: l'utente trova su Facebook case che l'app non ha).
         mancanti = m.pop("id_mancanti", [])
         recuperati = 0
-        for pid in mancanti[:3]:
+        for pid in mancanti[:10]:
             try:
                 def apri_post(pid=pid):
                     page.goto(f"https://www.facebook.com/groups/{gid}/posts/{pid}/", wait_until="domcontentloaded", timeout=60000)

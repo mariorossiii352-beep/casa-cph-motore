@@ -160,7 +160,8 @@ MEMORIA.parent.mkdir(parents=True, exist_ok=True)
 visti = json.loads(MEMORIA.read_text()) if MEMORIA.exists() else {}
 fine = time.time() + MINUTI * 60
 esito = 0
-PAUSA_GIRO = 30 * 60
+# Un giro ogni 20 minuti (21/10/2026: solo Facebook, i siti sono in pausa; prima 30). Un giro di 28 gruppi dura ~16 minuti.
+PAUSA_GIRO = 20 * 60
 
 with sync_playwright() as pw:
     ctx, page = apri(pw)
@@ -304,7 +305,7 @@ with sync_playwright() as pw:
         # Salva subito i cookie aggiornati da Facebook: se il giro dopo va male, restano validi.
         if esito == 0:
             salva(ctx)
-        # Ritmo da persona, non da robot: un giro ogni 30 minuti al massimo.
+        # Ritmo da persona, non da robot: un giro ogni 20 minuti al massimo.
         pausa = t0 + PAUSA_GIRO - time.time()
         if esito == 0 and pausa > 0 and time.time() + pausa < fine:
             log(f"pausa {round(pausa / 60)} min")
