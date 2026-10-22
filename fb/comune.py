@@ -341,12 +341,18 @@ def leggi_gruppo(page, gid, scroll=8):
     # Profondita': tra due letture dello stesso gruppo passano 30 minuti. Se il post piu' vecchio letto
     # e' uscito da meno di 50 minuti, in un gruppo molto attivo potrebbero restarne fuori: si scorre
     # ancora (al massimo 6 volte) e si rilegge.
+    # 22/10/2026 ("non puo' essere tralasciata nessuna casa"): si scorre finche' la lettura non arriva ad almeno 3 post piu' vecchi di
+    # 90 minuti (un solo post vecchio non basta: un post fissato in cima ha una data vecchia), fino a 5 volte da 6 scorrimenti.
+    # Prima: una volta sola, e solo se il piu' vecchio era uscito da meno di 50 minuti (un post fissato in cima la bloccava).
     extra = 0
     try:
-        tempi = [p["tempo"] for p in posts.values() if p.get("tempo")]
-        if tempi and time.time() - min(tempi) < 50 * 60:
-            extra = 6
-            risposte += registra(page, lambda: scorri(extra))
+        def pochi_vecchi():
+            return sum(1 for p in posts.values() if p.get("tempo") and time.time() - p["tempo"] > 90 * 60) < 3
+        giri_extra = 0
+        while pochi_vecchi() and giri_extra < 5:
+            giri_extra += 1
+            extra += 6
+            risposte += registra(page, lambda: scorri(6))
             posts = post_da(risposte)
     except Exception:
         pass
