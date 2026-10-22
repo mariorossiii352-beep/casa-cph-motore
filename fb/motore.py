@@ -120,7 +120,9 @@ def controlla_post(page, url, pid, pezzo=""):
 def controlli(ctx, page, fine):
     """Dopo ogni giro: ricontrolla i post delle case che sono nell'app, a blocchi di 30, per al
     massimo 12 minuti (cosi' anche un arretrato di centinaia di post si smaltisce in poco tempo)."""
-    stop = min(fine, time.time() + 12 * 60)
+    # 4 minuti (12 fino al 22/10/2026): un giro di lettura dura ~16 minuti, con 12 di controlli il ciclo era di 30 minuti invece di 20.
+    # L'arretrato si smaltisce piano nei giri dopo (il server dice quali post controllare prima).
+    stop = min(fine, time.time() + 4 * 60)
     r = manda("/motore/controlli", {"esiti": []}) or {}
     tot = spar = 0
     while r.get("da_controllare") and time.time() < stop:
@@ -289,7 +291,7 @@ with sync_playwright() as pw:
         if _c.COPERTURA:
             c = [x for x in _c.COPERTURA.values() if x]
             log(f"COPERTURA giro {giro}: gruppi={len(c)} messaggi={sum(x['messaggi'] for x in c)} messaggi_persi={sum(x['messaggi_persi'] for x in c)} "
-                f"blocchi={sum(x['blocchi'] for x in c)} blocchi_persi={sum(x['blocchi_persi'] for x in c)} persi_forti={sum(x.get('persi_forti', 0) for x in c)} visibili_ora={sum(x.get('visibili_ora', 0) for x in c)} catturati_ora={sum(x.get('catturati_ora', 0) for x in c)} catturati={sum(x['catturati'] for x in c)} "
+                f"blocchi={sum(x['blocchi'] for x in c)} blocchi_persi={sum(x['blocchi_persi'] for x in c)} persi_forti={sum(x.get('persi_forti', 0) for x in c)} id_dom={sum(x.get('id_dom', 0) for x in c)} id_mancanti={sum(x.get('id_mancanti_n', 0) for x in c)} id_recuperati={sum(x.get('id_recuperati', 0) for x in c)} visibili_ora={sum(x.get('visibili_ora', 0) for x in c)} catturati_ora={sum(x.get('catturati_ora', 0) for x in c)} catturati={sum(x['catturati'] for x in c)} "
                 f"scroll_extra={sum(1 for x in c if x.get('scroll_extra'))}")
             manda("/motore/stato", {"copertura": _c.COPERTURA, "giro": giro})
             _c.COPERTURA = {}
