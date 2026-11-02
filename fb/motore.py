@@ -122,7 +122,7 @@ def controlli(ctx, page, fine):
     massimo 12 minuti (cosi' anche un arretrato di centinaia di post si smaltisce in poco tempo)."""
     # 4 minuti (12 fino al 22/10/2026): un giro di lettura dura ~16 minuti, con 12 di controlli il ciclo era di 30 minuti invece di 20.
     # L'arretrato si smaltisce piano nei giri dopo (il server dice quali post controllare prima).
-    stop = min(fine, time.time() + 4 * 60)
+    stop = min(fine, time.time() + 12 * 60)
     r = manda("/motore/controlli", {"esiti": []}) or {}
     tot = spar = 0
     while r.get("da_controllare") and time.time() < stop:
@@ -163,7 +163,7 @@ visti = json.loads(MEMORIA.read_text()) if MEMORIA.exists() else {}
 fine = time.time() + MINUTI * 60
 esito = 0
 # Un giro ogni 20 minuti (21/10/2026: solo Facebook, i siti sono in pausa; prima 30). Un giro di 28 gruppi dura ~16 minuti.
-PAUSA_GIRO = 20 * 60
+PAUSA_GIRO = 30 * 60
 
 with sync_playwright() as pw:
     ctx, page = apri(pw)
@@ -307,7 +307,7 @@ with sync_playwright() as pw:
         # Salva subito i cookie aggiornati da Facebook: se il giro dopo va male, restano validi.
         if esito == 0:
             salva(ctx)
-        # Ritmo da persona, non da robot: un giro ogni 20 minuti al massimo.
+        # Ritmo da persona, non da robot: un giro ogni 30 minuti al massimo.
         pausa = t0 + PAUSA_GIRO - time.time()
         if esito == 0 and pausa > 0 and time.time() + pausa < fine:
             log(f"pausa {round(pausa / 60)} min")
